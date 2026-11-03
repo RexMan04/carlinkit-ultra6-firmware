@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CarPlay pass-through</title>
+<style>
+	/* One column of cards, sized for a phone held in the car. Colours follow
+	   the stock page's blue; light and dark follow the phone's setting. */
+	:root {
+		--bg: #f2f5f8; --card: #ffffff; --fg: #1d2329; --muted: #5f6b76; --line: #d3dbe2;
+		--accent: #3d84bc; --accent-fg: #ffffff; --armed: #e8921a;
+		--good-bg: #dcf1e2; --good-fg: #1b6631; --busy-bg: #e3eef8; --busy-fg: #2f6a99;
+		--warn-bg: #fbe8d2; --warn-fg: #874708; --plain-bg: #e8ecf0; --plain-fg: #3f4a54;
+		--err: #b3261e;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root:not([data-theme="light"]) {
+			--bg: #12161b; --card: #1b2128; --fg: #e5eaef; --muted: #9aa6b2; --line: #333d47;
+			--accent: #5aa2db; --accent-fg: #0d1217; --armed: #f0a33c;
+			--good-bg: #193a24; --good-fg: #8fdba6; --busy-bg: #1c3044; --busy-fg: #9ccaf0;
+			--warn-bg: #3d2a14; --warn-fg: #f3c38a; --plain-bg: #262e36; --plain-fg: #c4cdd6;
+			--err: #f2938b; color-scheme: dark;
+		}
+	}
+	:root[data-theme="dark"] {
+		--bg: #12161b; --card: #1b2128; --fg: #e5eaef; --muted: #9aa6b2; --line: #333d47;
+		--accent: #5aa2db; --accent-fg: #0d1217; --armed: #f0a33c;
+		--good-bg: #193a24; --good-fg: #8fdba6; --busy-bg: #1c3044; --busy-fg: #9ccaf0;
+		--warn-bg: #3d2a14; --warn-fg: #f3c38a; --plain-bg: #262e36; --plain-fg: #c4cdd6;
+		--err: #f2938b; color-scheme: dark;
+	}
+	body { background: var(--bg); color: var(--fg); margin: 0;
+		font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+	main { max-width: 560px; margin: 0 auto; padding-block: 16px;
+		padding-left: max(16px, env(safe-area-inset-left, 0px));
+		padding-right: max(16px, env(safe-area-inset-right, 0px));
+		display: grid; gap: 14px; }
+	a.back { color: var(--accent); text-decoration: none; }
+	h1 { font-size: 22px; margin: 0; text-wrap: balance; }
+	section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px;
+		display: grid; gap: 10px; min-width: 0; }
+	h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+	.badge { justify-self: start; padding: 6px 12px; border-radius: 16px; font-weight: 600; }
+	.good { background: var(--good-bg); color: var(--good-fg); }
+	.busy { background: var(--busy-bg); color: var(--busy-fg); }
+	.warn { background: var(--warn-bg); color: var(--warn-fg); }
+	.plain { background: var(--plain-bg); color: var(--plain-fg); }
+	table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+	th { text-align: left; font-weight: 500; color: var(--muted); padding: 4px 10px 4px 0; width: 42%; vertical-align: top; }
+	td { padding: 4px 0; overflow-wrap: anywhere; }
+	button { font: inherit; cursor: pointer; color: var(--fg); }
+	button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+	.chip { border: 1px solid var(--line); background: var(--card); border-radius: 18px; padding: 8px 14px; font-size: 14px; }
+	.chip.sel { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+	.chip.armed { background: var(--armed); border-color: var(--armed); color: #1a1206; }
+	p.note { font-size: 13px; color: var(--muted); margin: 0; }
+	#msg:empty, #err:empty { display: none; }
+	#msg, #err { margin: 0; font-size: 14px; }
+	#err { color: var(--err); }
+	#reset { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); }
+</style>
+</head>
+<body>
+<main>
+	<a class="back" href="/">&lsaquo; Back to adapter settings</a>
+	<h1>CarPlay pass-through</h1>
+	<p id="err"></p>
+	<p id="msg"></p>
+
+	<section>
+		<h2>Status</h2>
+		<div id="mode" class="badge plain">Loading</div>
+		<table><tbody id="rows"></tbody></table>
+	</section>
+
+	<section>
+		<h2>Pass-through</h2>
+		<div class="chips">
+			<button id="pt-on" class="chip">On</button>
+			<button id="pt-off" class="chip">Off (stock)</button>
+		</div>
+		<p class="note">On sends your iPhone's video straight to the car. Off uses the adapter's
+			stock re-encoding. Applies the next time CarPlay connects. Tap twice to change.</p>
+	</section>
+
+	<section>
+		<h2>Audio delay</h2>
+		<div class="chips" id="lat"></div>
+		<p class="note">How much audio the adapter buffers before playing. Lower feels snappier but
+			can crackle or drop out when Wi-Fi hiccups. "Phone decides" is the default. 300 ms is the
+			lowest fixed value the firmware accepts (the stock menu stops at 400). Applies the next time
+			CarPlay connects. Tap twice to change.</p>
+	</section>
+
+	<section>
+		<button id="reset">Reset both to defaults</button>
+	</section>
+</main>
+<script src="cpthru.js"></script>
+</body>
+</html>

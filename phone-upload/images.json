@@ -1,0 +1,20 @@
+[
+  {
+    "path": "build/v5_202610121756_passthru.swu",
+    "mail": "mail/v5_202610121756_passthru.swu",
+    "name": "v5_202610121756_passthru.swu",
+    "label": "Pass-through",
+    "md5": "3bbb773174a282a623860ecbb319b2ae",
+    "size": 27578368,
+    "sha256": "c406489a8653a851597b0ec9109abda73a9fffd8b71a910b88d8e8ba5c218ade"
+  },
+  {
+    "path": "v5_202610121756.swu",
+    "mail": "mail/v5_202610121756_STOCK_rollback.swu",
+    "name": "v5_202610121756_STOCK_rollback.swu",
+    "label": "Stock rollback",
+    "md5": "8cda8cf273d665c80b2a4b217b9bdf44",
+    "size": 27578368,
+    "sha256": "6e56e9a7952b7c39081258d9be37cbc0ba81801596da2018bc373ea9d404b30a"
+  }
+]

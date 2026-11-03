@@ -1,0 +1,84 @@
+{
+  "date": "2026-11-02T22:16:16.735Z",
+  "engines": {
+    "webkit": "27.2",
+    "chromium": "157.0.8103.15"
+  },
+  "results": [
+    {
+      "name": "WebKit actual pass-through",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit actual stock rollback",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit active",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit origin",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit wrong-size",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit wrong-hash",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit http",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit path",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit redirect",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit lost",
+      "requests": 2,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit body-timeout",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit write",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit final",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit hash-echo",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "Chromium actual pass-through",
+      "requests": 2694,
+      "result": "pass"
+    }
+  ]
+}

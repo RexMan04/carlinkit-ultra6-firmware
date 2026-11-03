@@ -1,0 +1,18 @@
+__pycache__/
+*.so
+shim/build/
+shim/testdata/
+# Local evidence and generated artifacts stay outside the source history.
+review/
+preview/
+*.swu
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.webm
+*.analysis.json
+.playwright-cli/
+
+# Local review plans and runtime artifacts
+.local-work/
