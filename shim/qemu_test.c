@@ -54,6 +54,12 @@ __attribute__((constructor)) static void run(void)
 	int v = info ? info("CPTHRU_TEST_KEY", 1234) : -1;
 	printf("%s sd_get_info_int reaches the original: %d\n", v == 1234 ? "ok" : "FAIL", v);
 	bad += v != 1234;
+	/* Timing uses only this firmware clock (no new clock imports). */
+	int (*ms)(void) = cp_dlsym(RTLD_DEFAULT, "get_current_mono_time_ms");
+	int a = ms ? ms() : -1, b = ms ? ms() : -1;
+	printf("%s get_current_mono_time_ms resolves and is monotonic: %d -> %d\n",
+	       ms && b >= a ? "ok" : "FAIL", a, b);
+	bad += !ms || b < a;
 	printf(bad ? "%d problem(s)\n" : "PASS\n", bad);
 	fflush(stdout);
 	_exit(bad != 0);

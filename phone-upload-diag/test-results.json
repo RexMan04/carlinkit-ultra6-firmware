@@ -1,0 +1,105 @@
+{
+  "date": "2026-11-03T21:38:20.361Z",
+  "engines": {
+    "webkit": "27.2",
+    "chromium": "157.0.8103.15"
+  },
+  "images": [
+    {
+      "name": "v5_202610121756_passthru_diag.swu",
+      "label": "Diagnostic test",
+      "md5": "96383d71d2d635dcd7f2ddc66b620401",
+      "sha256": "dac8c1a57f9f948885f164e1224936b767ec5486974c73b3b2bcc5dfcea44d3b",
+      "size": 27578368
+    },
+    {
+      "name": "v5_202610121756_STOCK_rollback.swu",
+      "label": "Stock rollback",
+      "md5": "8cda8cf273d665c80b2a4b217b9bdf44",
+      "sha256": "6e56e9a7952b7c39081258d9be37cbc0ba81801596da2018bc373ea9d404b30a",
+      "size": 27578368
+    }
+  ],
+  "results": [
+    {
+      "name": "WebKit actual Diagnostic test",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit actual Stock rollback",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit actual Diagnostic test from the diagnostics main page",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit active",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit origin",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit wrong-size",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit wrong-hash",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit lost",
+      "requests": 2,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit path",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit http",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit redirect",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit body-timeout",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit write",
+      "requests": 1,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit hash-echo",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit final",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "Chromium actual Diagnostic test",
+      "requests": 2694,
+      "result": "pass"
+    }
+  ]
+}

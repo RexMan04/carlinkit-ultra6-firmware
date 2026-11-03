@@ -5,6 +5,10 @@
     return;
   }
   const id = 'carlinkit-local-upload';
+  if (window.CPDiag?.busy()) {
+    alert('Wait until the debug ZIP is ready, then run this bookmark again. No upload started.');
+    return;
+  }
   if (document.getElementById(id)) {
     document.getElementById(id).scrollIntoView();
     return;
@@ -46,6 +50,10 @@
   let attempted = false;
   button.onclick = async () => {
     if (attempted || !input.files.length) return;
+    if (window.CPDiag?.busy()) {
+      say('Wait until the debug ZIP is ready, then tap Upload and verify again.');
+      return;
+    }
     attempted = true;
     input.disabled = button.disabled = true;
     let sent = false;
@@ -65,7 +73,7 @@
       }
       const digest = md5.finalize().toString(), strong = sha.finalize().toString();
       const image = known.find(item => item.md5 === digest && item.sha256 === strong && item.size === bytes.length);
-      if (!image) throw Error('File is not the verified pass-through or stock rollback image.');
+      if (!image) throw Error(__MISMATCH__);
       const total = Math.ceil(bytes.length / 10240), started = Date.now();
       for (let chunk = 0; chunk < total; chunk++) {
         const last = chunk === total - 1;

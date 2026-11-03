@@ -26,7 +26,7 @@ persist.suding.wl.audio.latency)
 esac
 # setprop waits on the property service; don't let a wedged service hang the
 # page's request (busybox here has no timeout applet).
-setprop "$key" "$value" &
+setprop "$key" "$value" >/dev/null 2>&1 &
 sp=$!
 (sleep 3; kill "$sp" 2>/dev/null) &
 watchdog=$!

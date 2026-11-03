@@ -10,7 +10,9 @@ trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/props"
 cat > "$T/bin/getprop" <<G
 #!/bin/sh
-cat "$T/props/\$1" 2>/dev/null
+# SLOWPROP names a property whose read hangs (a wedged property service).
+case "\$1" in "\${SLOWPROP:-}") exec sleep 10 ;; esac
+cat "$T/props/\$1" 2>/dev/null || true # unset: empty, success (like getprop)
 G
 cat > "$T/bin/setprop" <<S
 #!/bin/sh
@@ -18,7 +20,7 @@ printf '%s' "\$2" > "$T/props/\$1"
 S
 chmod +x "$T/bin/"*
 fails=0 n=0
-run() { QUERY_STRING=$2 PATH="$T/bin:$PATH" ${SH:-bash --posix} "$CGI/$1" | sed '1,/^$/d'; }
+run() { QUERY_STRING=$2 SLOWPROP=${SLOWPROP:-} PATH="$T/bin:$PATH" ${SH:-bash --posix} "$CGI/$1" | sed '1,/^$/d'; }
 check() { n=$((n+1)); if ! eval "$1"; then fails=$((fails+1)); echo "FAIL $2"; fi; }
 json() { python3 -I -c 'import json,sys; json.loads(sys.stdin.read())'; }
 
@@ -47,5 +49,25 @@ out=$(run cpthru_status.cgi "")
 check 'echo "$out" | grep -q "\"markers\":\["' "markers array present"
 check 'echo "$out" | json' "status JSON valid without shim files"
 check 'echo "$out" | grep -q "\"status\":null" && echo "$out" | grep -q "\"off\":\"1\""' "missing files -> null; settings read"
+check 'echo "$out" | grep -q "\"timing\":null,\"timing_error\":\"missing\"" && echo "$out" | grep -q "\"props_ok\":true"' "no timing file -> null + reason"
+# A wedged property service must not hang the status page.
+t0=$(date +%s)
+out=$(SLOWPROP=persist.cpthru.off run cpthru_status.cgi "")
+t1=$(date +%s)
+check 'echo "$out" | json && echo "$out" | grep -q "\"props_ok\":false" && [ $((t1 - t0)) -le 6 ]' "hung getprop bounded in status ($((t1 - t0)) s)"
+
+# Snapshot (read-only; host /proc, no adapter files here): valid JSON, the
+# allowlisted settings, explicit nulls/missing for what this host lacks.
+printf 1 > "$T/props/persist.console.log.nosave"
+t0=$(date +%s)
+out=$(SLOWPROP=persist.console.log.index run cpthru_snapshot.cgi "")
+t1=$(date +%s)
+check 'echo "$out" | json' "snapshot JSON valid"
+check 'echo "$out" | grep -q "\"nosave\":\"1\"" && echo "$out" | grep -q "\"persist.cpthru.off\":\"1\""' "snapshot settings read"
+check 'echo "$out" | grep -q "\"persist.console.log.index\":null" && echo "$out" | grep -q "\"prop:persist.console.log.index\""' "hung getprop -> null + missing"
+check '[ $((t1 - t0)) -le 8 ]' "snapshot bounded ($((t1 - t0)) s)"
+check 'echo "$out" | python3 -I -c "import json,sys; d=json.load(sys.stdin); assert d[\"sample_up_cs\"][1] - d[\"sample_up_cs\"][0] >= 90, d[\"sample_up_cs\"]; assert any(c[\"name\"] == \"cpu\" and c[\"total\"] > 0 for c in d[\"cpu\"])"' "two CPU samples about 1 s apart"
+out=$(run cpthru_snapshot.cgi 'x=$(touch /tmp/cpthru-pwned)&key=`id`')
+check '[ ! -e /tmp/cpthru-pwned ] && echo "$out" | json' "query string ignored"
 echo "$n checks, $fails failed (shell: ${SH:-bash --posix})"
 exit $((fails != 0))

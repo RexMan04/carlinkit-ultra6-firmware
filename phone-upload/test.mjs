@@ -1,12 +1,40 @@
+// bun phone-upload/test.mjs                  tests phone-upload/ (original)
+// bun phone-upload/test.mjs --dir DIR        tests a spec build (e.g. phone-upload-diag);
+//     results go to DIR, the original phone-upload/ files are checked unchanged,
+//     and one extra scenario runs on the passthru_diag main page.
 import assert from 'node:assert/strict';
-import {readFile, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, writeFile} from 'node:fs/promises';
+import {existsSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {resolve} from 'node:path';
+import {spawnSync} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {createServer} from 'node:http';
 import {chromium, webkit} from '/home/kaden/.bun/install/global/node_modules/playwright/index.mjs';
 
-const dir = import.meta.dir;
+const here = import.meta.dir;
+const argDir = process.argv.indexOf('--dir');
+const dir = argDir >= 0 ? resolve(process.argv[argDir + 1]) : here;
+const variant = dir !== resolve(here);
 const base = '/home/kaden/models/staging/carlinkit-ultra6-fw';
 const root = base + '/tier1/rootfs_stock_exact/etc/shttpd';
+const WEBKIT = '/home/kaden/.cache/ms-playwright/webkit-2359/pw_run.sh';
+const CHROMIUM = '/home/kaden/.cache/ms-playwright/chromium_headless_shell-1252/chrome-headless-shell-linux64/chrome-headless-shell';
+const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
+const originals = async () => Object.fromEntries(await Promise.all(
+  ['bookmarklet.txt', 'images.json', 'upload.min.js', 'test-results.json'].map(async n =>
+    [n, existsSync(here + '/' + n) ? sha256(await readFile(here + '/' + n)) : null])));
+const originalsBefore = await originals();
+if (variant) assert.equal(originalsBefore['bookmarklet.txt'], 'f1d8b5523033e29bc642a5ff3a1760b9624ace96ac5c5fae7c1e3464c249a0ea');
+// The passthru_diag main page (stock page + diagnostics script), for the
+// extra scenario: later uploads will start from that page.
+let diagIndex = null;
+if (variant) {
+  const out = (await mkdtemp(tmpdir() + '/cpd-index-')) + '/index.html';
+  const r = spawnSync('python3', [resolve(here, '../build_fw.py'), '--patch-index', root, out], {encoding: 'utf8'});
+  assert.equal(r.status, 0, 'patch-index failed: ' + r.stdout + r.stderr);
+  diagIndex = await readFile(out);
+}
 const mark = (await readFile(dir + '/bookmarklet.txt', 'utf8')).trim();
 const payload = (await readFile(dir + '/upload.min.js', 'utf8')).trim();
 assert.equal(decodeURIComponent(mark.slice(11)), payload);
@@ -21,7 +49,9 @@ const results = [];
 async function scenario(browser, name, options = {}) {
   const requests = [], parts = [], errors = [], dialogs = [];
   const image = images[options.image || 0], expected = imageBytes[options.image || 0];
-  let failure;
+  let failure, releaseUpload, sawUpload;
+  const uploadReached = new Promise(r => { sawUpload = r; });
+  let exports = 0;
   // WebKit's inspector omits Blob payloads from postDataBuffer(). A loopback
   // HTTP proxy captures actual browser bytes and NEVER forwards any request.
   const server = createServer(async (req, res) => {
@@ -38,6 +68,7 @@ async function scenario(browser, name, options = {}) {
       const url = new URL(req.url, 'http://' + req.headers.host);
       const request = {url: () => url.href, method: () => req.method,
         postDataBuffer: () => raw, headers: () => req.headers};
+      if (['/cgi-bin/minizip.cgi', '/cgi-bin/cpthru_snapshot.cgi'].includes(url.pathname)) exports++;
       if (url.pathname === '/cgi-bin/downfile.cgi') {
         requests.push(request.url());
         assert.equal(request.method(), 'POST');
@@ -71,6 +102,9 @@ async function scenario(browser, name, options = {}) {
         }
         assert(chunk.equals(expectedChunk), 'CGI stores exact source bytes');
         parts.push(Buffer.from(chunk));
+        if (options.overlap && index === 2) {
+          sawUpload(); await new Promise(r => { releaseUpload = r; });
+        }
         if (parts.length % 1000 === 0) console.log(name + ': received ' + parts.length + '/' + total);
         if (options.mode === 'lost' && index === 1) return await route.abort();
         if (options.mode === 'http') return await route.fulfill({status: 500, body: 'failure'});
@@ -91,6 +125,10 @@ async function scenario(browser, name, options = {}) {
       if (url.hostname === 'example.invalid') throw Error('Redirect was followed');
       // Serve real extracted static files, with no requests ever reaching LAN.
       const path = url.pathname === '/' ? '/index.html' : url.pathname;
+      if (options.page === 'diag' && path === '/index.html')
+        return await route.fulfill({status: 200, contentType: 'text/html', body: diagIndex});
+      if (options.page === 'diag' && path === '/cpthru_diag.js')
+        return await route.fulfill({status: 200, contentType: 'text/javascript', body: await readFile(here + '/../web/cpthru_diag.js')});
       if (/^\/[A-Za-z0-9_.-]+$/.test(path)) {
         try {
           const body = await readFile(root + path);
@@ -164,6 +202,14 @@ async function scenario(browser, name, options = {}) {
       await panel.locator('button').click();
       // Exercise duplicate invocation immediately, even bypassing disabled DOM.
       await panel.locator('button').evaluate(el => el.onclick());
+      if (options.overlap) {
+        await uploadReached;
+        await page.locator('#cpd-panel .cpd-prepare').click();
+        assert.match(await page.locator('#cpd-panel .cpd-state').textContent(), /Not started: a firmware upload/);
+        assert.equal(await page.evaluate(() => window.CPDiag.busy()), false);
+        assert.equal(exports, 0, 'no diagnostic snapshot or ZIP during upload');
+        releaseUpload();
+      }
       if (options.mode === 'body-timeout') {
         await page.waitForFunction(() => window.__testFetchCalls === 1);
         await page.clock.fastForward(30001);
@@ -202,17 +248,25 @@ async function scenario(browser, name, options = {}) {
 
 const browsers = [];
 try {
-  const wk = await webkit.launch({headless: true, executablePath: '/home/kaden/.cache/ms-playwright/webkit-2359/pw_run.sh'});
+  const wk = await webkit.launch({headless: true, executablePath: WEBKIT});
   browsers.push(wk);
+  const first = images[0].label;
   await Promise.all([
-    scenario(wk, 'WebKit actual pass-through', {screenshot: true}),
-    scenario(wk, 'WebKit actual stock rollback', {image: 1})
+    scenario(wk, 'WebKit actual ' + first, {screenshot: true}),
+    scenario(wk, 'WebKit actual ' + images[1].label, {image: 1})
   ]);
+  if (variant) await scenario(wk, 'WebKit actual ' + first + ' from the diagnostics main page', {page: 'diag', overlap: true});
   const modes = ['origin', 'active', 'wrong-size', 'wrong-hash', 'lost', 'http', 'redirect', 'path', 'write', 'final', 'hash-echo', 'body-timeout'];
   for (let start = 0; start < modes.length; start += 4) {
     await Promise.all(modes.slice(start, start + 4).map(mode => scenario(wk, 'WebKit ' + mode, {mode})));
   }
-  const chrome = await chromium.launch({headless: true}); browsers.push(chrome);
-  await scenario(chrome, 'Chromium actual pass-through');
-  await writeFile(dir + '/test-results.json', JSON.stringify({date: new Date().toISOString(), engines: {webkit: wk.version(), chromium: chrome.version()}, results}, null, 2) + '\n');
+  const chrome = await chromium.launch({headless: true, executablePath: CHROMIUM}); browsers.push(chrome);
+  await scenario(chrome, 'Chromium actual ' + first);
+  await writeFile(dir + '/test-results.json', JSON.stringify({date: new Date().toISOString(),
+    engines: {webkit: wk.version(), chromium: chrome.version()},
+    images: images.map(({name, label, md5, sha256, size}) => ({name, label, md5, sha256, size})), results}, null, 2) + '\n');
 } finally { await Promise.allSettled(browsers.map(browser => browser.close())); }
+if (variant) {
+  assert.deepEqual(await originals(), originalsBefore, 'original phone-upload/ files changed');
+  console.log('original phone-upload/ files unchanged: ' + JSON.stringify(originalsBefore));
+}

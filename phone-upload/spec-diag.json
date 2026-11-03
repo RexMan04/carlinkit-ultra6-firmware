@@ -1,0 +1,20 @@
+{
+  "note": "Upload-only helper for the passthru_diag TEST image and the stock rollback. Paths are relative to ~/models/staging/carlinkit-ultra6-fw. The diagnostic image's hashes come from build_fw.py's release metadata.",
+  "out": "phone-upload-diag",
+  "images": [
+    {
+      "path": "diag/v5_202610121756_passthru_diag.swu",
+      "metadata": "diag/v5_202610121756_passthru_diag.json",
+      "name": "v5_202610121756_passthru_diag.swu",
+      "label": "Diagnostic test"
+    },
+    {
+      "path": "v5_202610121756.swu",
+      "name": "v5_202610121756_STOCK_rollback.swu",
+      "label": "Stock rollback",
+      "md5": "8cda8cf273d665c80b2a4b217b9bdf44",
+      "sha256": "6e56e9a7952b7c39081258d9be37cbc0ba81801596da2018bc373ea9d404b30a",
+      "size": 27578368
+    }
+  ]
+}

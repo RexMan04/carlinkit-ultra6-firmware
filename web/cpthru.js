@@ -75,7 +75,7 @@ if (typeof module !== "undefined") module.exports = {view: view, LATENCIES: LATE
 
 /* ---- DOM ---- */
 if (typeof document !== "undefined") (function () {
-	var armed = null, last = null;
+	var armed = null, last = null, statusPending = null;
 	function $(id) { return document.getElementById(id); }
 	function text(el, t) { el.textContent = t; }
 	function label(v) { return v === 0 ? "Phone decides (default)" : v + " ms"; }
@@ -113,14 +113,63 @@ if (typeof document !== "undefined") (function () {
 		text($("pt-off"), armed === "pt-off" ? "Tap again" : "Off (stock)");
 	}
 
+	function statusUnavailable() {
+		/* Keep the last confirmed settings, but never leave old rates looking live. */
+		if (last) {
+			last = Object.assign({}, last, {mode: "Status unavailable", tone: "warn", rows: []});
+			render(last);
+		} else {
+			text($("mode"), "Status unavailable");
+			$("mode").className = "badge warn";
+			$("rows").textContent = "";
+		}
+		text($("err"), "Can't reach the adapter. Live readings are unavailable.");
+		if (window.CPDiag) window.CPDiag.status(null);
+	}
+
 	function refresh() {
-		fetch("cgi-bin/cpthru_status.cgi", {cache: "no-store"}).then(function (r) { return r.json(); })
-			.then(function (d) { last = view(d); render(last); text($("err"), ""); })
-			.catch(function () { text($("err"), "Can't reach the adapter."); });
+		if (statusPending) return statusPending.result;
+		var ctl = new AbortController(), job = {expired: false}, timer;
+		statusPending = job;
+		var deadline = new Promise(function (_, reject) {
+			timer = setTimeout(function () {
+				job.expired = true;
+				ctl.abort();
+				reject(new Error("Status request timed out"));
+			}, 6000);
+		});
+		/* The deadline covers headers and JSON body. No UI callbacks attach to
+		 * work itself: a response arriving after the deadline cannot revive it. */
+		var work = Promise.resolve().then(function () {
+			return fetch("cgi-bin/cpthru_status.cgi", {cache: "no-store", redirect: "error", signal: ctl.signal});
+		}).then(function (r) {
+			if (job.expired || r.status !== 200) throw new Error("Status unavailable");
+			return r.json();
+		});
+		function released() {
+			/* Keep this latch until the actual operation settles, even if an
+			 * implementation ignores abort, so repeated polls cannot pile up. */
+			if (statusPending === job) statusPending = null;
+		}
+		work.then(released, released);
+		job.result = Promise.race([work, deadline]).then(function (d) {
+			if (job.expired) return;
+			var next = view(d);
+			last = next; render(last); text($("err"), "");
+			if (window.CPDiag) window.CPDiag.status(d); /* diagnostics panel rows */
+		}).catch(statusUnavailable).finally(function () { clearTimeout(timer); });
+		return job.result;
+	}
+	/* No settings changes while the debug ZIP is being prepared. */
+	function diagBusy() {
+		if (!window.CPDiag || !window.CPDiag.busy()) return false;
+		text($("msg"), "Not saved: wait until the debug ZIP is ready.");
+		return true;
 	}
 
 	/* Two taps to change anything (no confirm() popups). */
 	function tap(id, key, value) {
+		if (diagBusy()) { armed = null; if (last) render(last); return; }
 		if (armed !== id) {
 			armed = id;
 			if (last) render(last);
@@ -147,6 +196,7 @@ if (typeof document !== "undefined") (function () {
 	}
 	/* REV-02: report exactly what was saved */
 	$("reset").onclick = function () {
+		if (diagBusy()) { armed = null; text($("reset"), "Reset both to defaults"); return; }
 		if (armed !== "reset") { armed = "reset"; text($("reset"), "Tap again to reset both"); return; }
 		armed = null;
 		text($("reset"), "Reset both to defaults");
