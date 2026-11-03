@@ -307,40 +307,66 @@
 			return {status: r.status, text: t, json: asText ? null : (function () { try { return JSON.parse(t); } catch (e) { return null; } })()};
 		} finally { clearTimeout(timer); }
 	}
-	async function gatewayState() {
-		try { var r = await get(GATEWAY + "?op=state", 8000); return r.status === 200 && r.json && r.json.ok ? r.json : null; }
-		catch (e) { return null; }
+	/* {kind: "ok", state} | {kind: "absent"} (404: firmware without the
+	 * gateway) | {kind: "unavailable"} (timeout, other errors). Only "absent"
+	 * may ever lead to the stock install request. */
+	async function gateway() {
+		try {
+			var r = await get(GATEWAY + "?op=state", 8000);
+			if (r.status === 200 && r.json && r.json.ok) return {kind: "ok", state: r.json};
+			if (r.status === 404) return {kind: "absent"};
+		} catch (e) { /* unavailable */ }
+		return {kind: "unavailable"};
 	}
-	/* What the adapter runs now. Project releases are recognised only by a
-	 * fresh release file; a shim ID alone is never treated as a release match. */
+	async function gatewayState() { var g = await gateway(); return g.kind === "ok" ? g.state : null; }
+	/* What the adapter runs now. Each part is "valid", "absent" (HTTP 404) or
+	 * "unknown" (timeout, other status, unparsable), never guessed. Project
+	 * releases are recognised only by a fresh release file; a shim ID alone is
+	 * never treated as a release match. */
 	async function running() {
 		var v = await get("/cgi-bin/getversion.cgi", 4000, true);
 		if (v.status !== 200) throw Error("no response");
 		var sys = (/system_version:([^\n]*)/.exec(v.text) || [])[1] || "unknown";
-		var out = {system: sys.trim(), release: null, shim: null};
+		var out = {system: sys.trim(), release: null, releaseState: "unknown", shim: null, shimState: "unknown", uptime: null};
 		try {
 			var rel = await get("/cpthru-release.json", 4000);
-			if (rel.status === 200 && rel.json && rel.json.format === "carlinkit-ultra6-release") out.release = rel.json;
-		} catch (e) { /* older build */ }
-		if (!out.release) {
-			try {
-				var st = await get("/cgi-bin/cpthru_status.cgi", 6000);
-				if (st.status === 200 && st.json) out.shim = st.json.build || (st.json.status && st.json.status.build) || null;
-			} catch (e) { /* stock */ }
-		}
+			if (rel.status === 404) out.releaseState = "absent";
+			else if (rel.status === 200 && rel.json && rel.json.format === "carlinkit-ultra6-release" &&
+				/^[0-9a-f]{12}$/.test(rel.json.release_id || "")) { out.release = rel.json; out.releaseState = "valid"; }
+		} catch (e) { /* unknown */ }
+		try {
+			var st = await get("/cgi-bin/cpthru_status.cgi", 6000);
+			if (st.status === 404) out.shimState = "absent";
+			else if (st.status === 200 && st.json) {
+				out.shim = st.json.build || (st.json.status && st.json.status.build) || null;
+				out.shimState = out.shim ? "valid" : "absent";
+				if (typeof st.json.now_ms === "number") out.uptime = st.json.now_ms;
+			}
+		} catch (e) { /* unknown */ }
 		return out;
 	}
 	function describe(now, want) {
-		var what = now.release ? "project release " + now.release.version + " (release ID " + now.release.release_id + ")" :
-			now.shim ? "an older project build without a release file (shim " + now.shim + ")" :
-			"stock firmware (no project files found)";
+		var what = now.releaseState === "valid" ? "project release " + now.release.version + " (release ID " + now.release.release_id + ")" :
+			now.releaseState === "absent" && now.shimState === "valid" ? "an older project build without a release file (shim " + now.shim + ")" :
+			now.releaseState === "absent" && now.shimState === "absent" ? "stock firmware (no project files found)" :
+			"firmware that could not be identified yet (some requests failed)";
 		var match = null;
-		if (want) {
-			if (want.kind === "project") match = !!(now.release && now.release.release_id === want.release_id);
-			else if (want.kind === "stock") match = !now.release && !now.shim;
-			else if (want.kind === "legacy") match = !now.release && now.shim === want.shim ? true : (now.release ? false : null);
+		if (want && want.kind === "project") {
+			if (now.releaseState === "valid") match = now.release.release_id === want.release_id;
+			else if (now.releaseState === "absent") match = false;
+		} else if (want && want.kind === "stock") {
+			if (now.releaseState === "valid" || now.shimState === "valid") match = false;
+			else if (now.releaseState === "absent" && now.shimState === "absent") match = true;
+		} else if (want && want.kind === "legacy") {
+			if (now.releaseState === "valid") match = false;
+			else if (now.releaseState === "absent" && now.shimState === "valid") match = now.shim === want.shim;
+			else if (now.releaseState === "absent" && now.shimState === "absent") match = false;
 		}
 		return {text: "The adapter reports " + what + ", system version " + now.system + ".", match: match};
+	}
+	function sameIdentity(a, b) {
+		return !!(a && b && a.releaseState === b.releaseState && a.shimState === b.shimState &&
+			(a.release && a.release.release_id) === (b.release && b.release.release_id) && a.shim === b.shim);
 	}
 
 	/* ---- UI ---- */
@@ -472,19 +498,35 @@
 				setTimeout(function () { if (armed && !installed) { armed = false; inst.textContent = "Install firmware"; } }, 5000);
 				return;
 			}
+			armed = false; inst.textContent = "Install firmware";
 			installed = true; setBusy(true); lock(true); input.disabled = true;
+			function back(msgText) {
+				installed = false; setBusy(false); verified = true; inst.hidden = false; inst.disabled = false;
+				input.disabled = false; say(msgText, "bad");
+			}
+			say("Checking the adapter before installing...");
+			var g = await gateway();
+			if (g.kind === "unavailable" || (ctx.builtin && g.kind !== "ok"))
+				return back("Not installed: the adapter's updater did not answer. Nothing was changed. Check the Wi-Fi and tap Install firmware again.");
+			var before = null;
+			try { before = await running(); } catch (e) { before = null; }
 			var want = {kind: rep.kind, label: rep.label, release_id: rep.release_id || null, shim: rep.shim || null,
-				name: rep.name, md5: rep.md5, t: Date.now()};
+				name: rep.name, md5: rep.md5, t: Date.now(), before: before};
 			say("Sending the install request...");
-			if (gw) {
+			if (g.kind === "ok") {
 				var r = null;
 				try { r = await get(GATEWAY + "?op=install&name=" + encodeURIComponent(rep.name) + "&size=" + rep.size + "&md5=" + rep.md5, 120000); }
 				catch (e) { r = null; }
 				if (r && r.json && r.json.ok === false && r.json.phase === "rejected") {
-					installed = false; setBusy(false); armed = false; inst.textContent = "Install firmware";
-					say("Install refused before anything started: " + r.json.error + ". Nothing was changed.", "bad");
-					verified = false; up.disabled = false; up.textContent = "Upload again"; input.disabled = false;
+					verified = false; up.disabled = false; up.textContent = "Upload again";
+					back("Install refused before anything started: " + r.json.error + ". Nothing was changed.");
+					inst.hidden = true;
 					return;
+				}
+				if (r && r.json && r.json.ok === false && r.json.phase === "install-started") {
+					store(PENDING, want);
+					say("An install was already started on the adapter this boot. Do not tap anything; this page keeps watching.", "bad");
+					return watch(want);
 				}
 				if (!(r && r.json && r.json.ok)) {
 					store(PENDING, want);
@@ -493,8 +535,15 @@
 					return watch(want);
 				}
 			} else {
-				/* First install from the bookmark on stock or older firmware: one stock request. */
-				fetch("/cgi-bin/submition.cgi?filename=" + rep.name + "&", {cache: "no-store"}).catch(function () {});
+				/* Confirmed older firmware (no gateway, HTTP 404): one stock request.
+				 * The stock installer answers only when it finishes or the adapter
+				 * restarts, so only a quick explicit refusal counts as "not started". */
+				var refused = await Promise.race([
+					fetch("/cgi-bin/submition.cgi?filename=" + rep.name + "&", {cache: "no-store"})
+						.then(function (x) { return x.text(); }).then(function (t) { return /refused/.test(t) ? t : null; }, function () { return null; }),
+					new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })
+				]);
+				if (refused) return back("Install refused by the adapter: " + refused.replace(/^[\s\S]*refused:?\s*/, "").trim());
 			}
 			store(PENDING, want);
 			watch(want);
@@ -507,33 +556,45 @@
 		}
 
 		var watching = false;
+		/* Done only when the adapter positively reports what was installed AND
+		 * there is evidence it restarted: an observed outage, a changed
+		 * identity, or a lower uptime. Unknown identity keeps the page waiting. */
 		async function watch(want) {
 			if (watching) return;
 			watching = true; installed = true; setBusy(true); lock(true); input.disabled = true;
-			var t0 = want.t || Date.now(), down = false, okRun = 0, lastNote = "";
+			var t0 = want.t || Date.now(), down = false, okRun = 0, before = want.before || null;
 			say("Installing " + want.label + ". Keep the adapter powered and this page open. It restarts on its own, " +
 				"possibly more than once.", "bad");
 			for (;;) {
 				var secs = Math.round((Date.now() - t0) / 1000), now = null;
+				var late = secs > 600 ? " It has been over 10 minutes: keep power on and wait; do not unplug." : "";
 				try { now = await running(); } catch (e) { now = null; }
 				if (!now) {
 					down = true; okRun = 0;
 					say("Adapter restarting or busy (" + secs + " s since the install request). Keep power on. " +
-						"If Safari loses the Wi-Fi, rejoin the adapter's hotspot; this page reconnects by itself." +
-						(secs > 600 ? " It has been over 10 minutes: keep power on and wait; do not unplug." : ""), "bad");
-				} else if (!down) {
-					var s = gw ? await gatewayState() : null;
-					var log = s && s.log && s.log.length ? " Installer: " + s.log[s.log.length - 1] : "";
-					if (log !== lastNote) lastNote = log;
-					say("Install requested " + secs + " s ago; the adapter has not restarted yet." + lastNote, "bad");
-				} else if (++okRun >= 2) {
+						"If Safari loses the Wi-Fi, rejoin the adapter's hotspot; this page reconnects by itself." + late, "bad");
+				} else {
 					var d = describe(now, want);
-					say((d.match === true ? "Done: the adapter is back and runs what you installed. " :
-						d.match === false ? "The adapter is back, but it does not report what you installed. " :
-						"The adapter is back. ") + d.text +
-						(now.release ? "" : " Reload the page to see its own settings page."), d.match === false ? "bad" : "ok");
-					store(PENDING, null);
-					if (okRun >= 20) break;
+					var restarted = down || (before && !sameIdentity(before, now) && d.match === true) ||
+						(before && before.uptime !== null && now.uptime !== null && now.uptime < before.uptime);
+					if (d.match === true && restarted) {
+						if (++okRun >= 2) {
+							say("Done: the adapter is back and runs what you installed. " + d.text +
+								(now.releaseState === "valid" ? "" : " Reload the page to see its own settings page."), "ok");
+							store(PENDING, null);
+							if (okRun >= 20) break;
+						}
+					} else if (d.match === false && restarted) {
+						okRun = 0;
+						say("The adapter is back, but it does not report what you installed. " + d.text +
+							" It may still be finishing; this page keeps watching." + late, "bad");
+					} else {
+						okRun = 0;
+						var s = gw ? await gatewayState() : null;
+						var log = s && s.log && s.log.length ? " Installer: " + s.log[s.log.length - 1] : "";
+						say((restarted ? "The adapter answered, but " + d.text.charAt(0).toLowerCase() + d.text.slice(1) + " Still checking." :
+							"Install requested " + secs + " s ago; the adapter has not restarted yet." + log) + late, "bad");
+					}
 				}
 				await new Promise(function (r) { setTimeout(r, 3000); });
 			}
@@ -541,7 +602,8 @@
 		}
 
 		(async function init() {
-			gw = await gatewayState();
+			var g = await gateway();
+			gw = g.kind === "ok" ? g.state : null;
 			if (gw) staged = gw.staged || [];
 			var want = load(PENDING);
 			if (gw && gw.phase === "install-started") {
@@ -550,16 +612,20 @@
 			if (want && Date.now() - want.t < 3600000) {
 				try {
 					var d = describe(await running(), want);
-					say("Last install request (" + want.label + "): " + (d.match === true ? "the adapter now runs it. " :
-						d.match === false ? "the adapter does NOT report it. " : "") + d.text, d.match === false ? "bad" : "ok");
-				} catch (e) { /* offline */ }
-				store(PENDING, null);
+					if (d.match === null) {
+						say("Last install request (" + want.label + "): " + d.text + " Reload in a moment to check again.", "bad");
+						return;
+					}
+					say("Last install request (" + want.label + "): " + (d.match ? "the adapter now runs it. " :
+						"the adapter does NOT report it. ") + d.text, d.match ? "ok" : "bad");
+					store(PENDING, null);
+				} catch (e) { /* offline: keep the record */ }
 			}
 		})();
 	}
 
 	var api = {md5: md5, sha256: sha256, analyze: analyze, cpioItems: cpioItems, manifestAt: manifestAt, upload: upload,
-		describe: describe, STOCK: STOCK, KNOWN: KNOWN, NAMES: NAMES, PROJECT_NAME: PROJECT_NAME, MAGIC: MAGIC};
+		describe: describe, sameIdentity: sameIdentity, STOCK: STOCK, KNOWN: KNOWN, NAMES: NAMES, PROJECT_NAME: PROJECT_NAME, MAGIC: MAGIC};
 	if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
 	api.mount = mount;
 	api.busy = function () { return busy; };

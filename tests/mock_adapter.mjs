@@ -27,12 +27,13 @@ const win = seq => ({seq, gen: 3, t0: 74000 + 5000 * seq, len_ms: 5000, calls: 4
   iv: stat(122, 160, 40), gap: stat(118.6, 155, 40), lk: stat(0, 1, 41), par: stat(0, 0, 41), plk: stat(0.4, 6, 40),
   vsend: stat(2.1, 38, 40), csend: stat(0, 0, 0), orig: stat(0, 0, 0), res: stat(0.5, 2, 41), pub: stat(0, 0, 1)});
 const info = (ret, stock) => ({calls: 2, last_mono_ms: 150100, stock, returned: ret, override: 1});
-export function status(props, build = '1b93a4b1163f') {
-  return {now_ms: 200500, build, markers: [],
-    status: {build, up_ms: 200000, t_ms: 199000, state: 'PASSTHRU', reason: 'IDR delivered', off: 0,
+export function status(props, build = '1b93a4b1163f', boot = Date.now() - 200500) {
+  const now = Date.now() - boot;  // uptime in ms, restarts from 0 on a simulated reboot
+  return {now_ms: now, build, markers: [],
+    status: {build, up_ms: now - 500, t_ms: now - 1500, state: 'PASSTHRU', reason: 'IDR delivered', off: 0,
       marker: 0, in_fps: 8.0, pt_fps: 8.0, stock_fps: 0, kbps: 2860, car: '1920x720@60', phone: '1920x720 p100/l40',
       fallbacks: 0, failed: 0, last_fallback: '', last_fallback_t_ms: 0, multi_vcl: 0, push_err: 0, kf_car: 0, kf_phone: 1},
-    link: {up_ms: 150000, stream: 1, session: 1, car: 1, event: 'car video start'},
+    link: {up_ms: now - 50000, stream: 1, session: 1, car: 1, event: 'car video start'},
     settings: {off: props['persist.cpthru.off'] || '', latency: props['persist.suding.wl.audio.latency'] || ''}, props_ok: true,
     timing: {v: 1, build, up_ms: 200000, mono_ms: 199000, session_mono_ms: 150000, stock_sent: 0,
       stock_suppressed: 120, info_source: 'last value returned by sd_get_info_int',
@@ -61,7 +62,7 @@ export async function createAdapter(opts = {}) {
       'persist.sys.boot.delay': '0', 'persist.sys.headunit.gps.disable': '', 'persist.suding.wireless.carplay.force.display': '0',
       'persist.sys.carplay.audio.media.samplerate': ''}, opts.props || {}),
     staged: new Map(), marker: null, launches: [], factory: 0, sets: [], chunks: [], vendor: [], unexpected: [],
-    down: false, hooks: {}, minizip: 0, holdMinizip: null, restartMs: opts.restartMs ?? 3000
+    down: false, hooks: {}, minizip: 0, boot: Date.now() - 200500, holdMinizip: null, restartMs: opts.restartMs ?? 3000
   };
   const sockets = new Set();
   const server = createServer(async (req, res) => {
@@ -80,7 +81,8 @@ export async function createAdapter(opts = {}) {
       if (p === '/cgi-bin/getversion.cgi') return send(200, 'text/plain', getversion(S.props));
       if (p === '/cgi-bin/cpthru_status.cgi') {
         if (S.page === 'stock') return send(404, 'text/plain', '');
-        return json(status(S.props));
+        if (S.hooks.status) { const h = S.hooks.status(); if (h) return send(h, 'text/plain', 'error'); }
+        return json(status(S.props, undefined, S.boot));
       }
       if (p === '/cgi-bin/cpthru_snapshot.cgi') return json(snapshot());
       if (p === '/cgi-bin/minizip.cgi') { S.minizip++; if (S.holdMinizip) await S.holdMinizip; return send(200, 'application/zip', zip); }
@@ -129,6 +131,7 @@ export async function createAdapter(opts = {}) {
       }
       if (p === '/cgi-bin/cpthru_update.cgi' && gw) {
         const op = q.get('op'), name = q.get('name') || '', size = Number(q.get('size'));
+        if (op === 'state' && S.hooks.state && S.hooks.state() === 'drop') return req.socket.destroy();
         const reject = e => json({ok: false, phase: 'rejected', error: e});
         if (name && !FWJS.NAMES.includes(name)) return reject('unexpected file name');
         if (op === 'state') return json({ok: true, phase: S.marker ? 'install-started' : 'idle', install: S.marker || '',
@@ -156,6 +159,7 @@ export async function createAdapter(opts = {}) {
         return reject('unknown op');
       }
       if (p === '/cgi-bin/submition.cgi') {
+        S.submition = (S.submition || 0) + 1;
         if (gw) return send(200, 'text/plain', 'refused: use Install firmware on the adapter main page (fail)\n');
         const name = (url.search.match(/filename=([^&]*)&/) || [])[1];
         const b = S.staged.get(name);
@@ -164,7 +168,10 @@ export async function createAdapter(opts = {}) {
         return send(200, 'text/plain', '');
       }
       if (p.startsWith('/cgi-bin/')) { S.unexpected.push(p); return send(404, 'text/plain', ''); }
-      if (p === '/cpthru-release.json') return S.release ? json(S.release) : send(404, 'text/plain', '');
+      if (p === '/cpthru-release.json') {
+        if (S.hooks.release) { const h = S.hooks.release(); if (h) return send(h, 'text/plain', 'error'); }
+        return S.release ? json(S.release) : send(404, 'text/plain', '');
+      }
       const path = p === '/' ? '/index.html' : p;
       if (!/^\/[A-Za-z0-9_.-]+$/.test(path)) return send(404, 'text/plain', '');
       const local = S.page === 'main' && ['/index.html', '/cpthru_fw.js', '/cpthru_main.js', '/cpthru_diag.js'].includes(path);
@@ -185,9 +192,9 @@ export async function createAdapter(opts = {}) {
         const sum = md5(b);
         if (sum === '8cda8cf273d665c80b2a4b217b9bdf44') { S.page = 'stock'; S.release = null; }
         else if (releaseImageMd5 && sum === releaseImageMd5) { S.page = 'main'; S.release = release; }
-        S.marker = null; S.staged.clear(); S.down = false;
+        S.marker = null; S.staged.clear(); S.down = false; S.boot = Date.now();
       }, S.restartMs);
-    }, 1500);
+    }, S.restartDelay ?? 1500);
   }
   await new Promise(r => server.listen(opts.port || 0, '127.0.0.1', r));
   return {S, server, port: server.address().port, close: () => { for (const s of sockets) s.destroy(); server.close(); }};

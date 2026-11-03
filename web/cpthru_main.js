@@ -128,7 +128,7 @@
 
 	/* ---- DOM ---- */
 	var $ = function (id) { return document.getElementById(id); };
-	var values = {}, saving = false, armed = null, armTimer = null, presetsMem = [];
+	var values = {}, saving = false, armed = null, armTimer = null, presetsMem = [], presetDiff = null;
 	function msg(t, tone) { var m = $("msg"); m.textContent = t || ""; m.className = "callout" + (tone === "bad" ? " warn" : ""); }
 	function tr(tb, a, b) {
 		var r = document.createElement("tr"), th = document.createElement("th"), td = document.createElement("td");
@@ -148,10 +148,10 @@
 		if (saving) return "a setting is being saved.";
 		return null;
 	}
-	function arm(id) {
+	function arm(id, ms) {
 		if (armed === id) { clearTimeout(armTimer); armed = null; return true; }
 		armed = id; clearTimeout(armTimer);
-		armTimer = setTimeout(function () { armed = null; renderAll(); }, 4000);
+		armTimer = setTimeout(function () { armed = null; presetDiff = null; renderAll(); }, ms || 4000);
 		renderAll();
 		return false;
 	}
@@ -231,10 +231,34 @@
 		presetsMem = p;
 		try { localStorage.setItem("cpthru.presets", JSON.stringify(p)); return true; } catch (e) { return false; }
 	}
-	function currentSettings() {
-		var o = {};
-		KEYS.forEach(function (k) { if (values[k] !== undefined && values[k] !== "") o[k] = values[k]; });
-		return o;
+	/* Saved settings as explicit values. An unset setting is stored as its
+	 * known default (what the adapter does when it is unset); settings with no
+	 * known default are left out and named in `omitted`. */
+	function snapshotSettings() {
+		var o = {}, omitted = [];
+		SETTINGS.forEach(function (st) {
+			var v = values[st.key];
+			if (v !== undefined && v !== "") o[st.key] = v;
+			else if (v === "" && st.def !== null) o[st.key] = st.def;
+			else omitted.push(st.label + (v === undefined ? " (unknown)" : " (not set on the adapter)"));
+		});
+		return {settings: o, omitted: omitted};
+	}
+	function currentSettings() { return snapshotSettings().settings; }
+	function label(k, v) {
+		var st = byKey(k), o = st && st.opts.filter(function (x) { return x[0] === v; })[0];
+		return o ? o[1] : v === "" || v === undefined ? "not set" : v;
+	}
+	/* Preset -> [{key, from, to}] for every valid setting that differs. */
+	function diffOf(p) {
+		return Object.keys(p.settings).filter(function (k) {
+			return allowed(k, p.settings[k]) && values[k] !== p.settings[k] && !(values[k] === "" && byKey(k).def === p.settings[k]);
+		})
+			.map(function (k) { return {key: k, from: values[k], to: p.settings[k]}; });
+	}
+	function diffText(d) {
+		return d.length ? d.map(function (x) { return byKey(x.key).label + ": " + label(x.key, x.from) + " \u2192 " + label(x.key, x.to); }).join("; ")
+			: "no changes: the adapter already has these settings";
 	}
 	function renderPresets() {
 		var box = $("preset-list"), list = loadPresets();
@@ -248,23 +272,32 @@
 			apply.type = del.type = "button";
 			apply.className = "btn" + (armed === "pa" + i ? " armed" : "");
 			del.className = "btn" + (armed === "pd" + i ? " armed" : "");
-			apply.textContent = armed === "pa" + i ? "Tap again" : "Apply";
+			apply.textContent = armed === "pa" + i ? "Tap again to apply" : "Apply";
 			del.textContent = armed === "pd" + i ? "Tap again" : "Delete";
 			apply.disabled = del.disabled = saving;
 			apply.onclick = function () {
 				var why = blocked();
 				if (why) { msg("Not applied: " + why, "bad"); return; }
-				if (!arm("pa" + i)) return;
-				var pairs = Object.keys(p.settings).filter(function (k) { return allowed(k, p.settings[k]) && values[k] !== p.settings[k]; })
-					.map(function (k) { return [k, p.settings[k]]; });
-				if (!pairs.length) { msg("Preset \"" + p.name + "\" already matches the saved settings."); renderAll(); return; }
-				saveMany(pairs, "Preset \"" + p.name + "\"");
+				var d = diffOf(p), text = diffText(d);
+				if (armed === "pa" + i && presetDiff && presetDiff.text !== text) {
+					presetDiff = {i: i, text: text}; renderAll(); return; /* saved settings changed: show the new diff first */
+				}
+				if (armed !== "pa" + i) presetDiff = {i: i, text: text};
+				if (!arm("pa" + i, 20000)) return;
+				presetDiff = null;
+				if (!d.length) { msg("Preset \"" + p.name + "\" already matches the saved settings."); renderAll(); return; }
+				saveMany(d.map(function (x) { return [x.key, x.to]; }), "Preset \"" + p.name + "\"");
 			};
 			del.onclick = function () {
 				if (!arm("pd" + i)) return;
 				var l = loadPresets(); l.splice(i, 1); savePresets(l); msg("Deleted preset \"" + p.name + "\"."); renderAll();
 			};
 			row.appendChild(name); row.appendChild(apply); row.appendChild(del); box.appendChild(row);
+			if (armed === "pa" + i && presetDiff && presetDiff.i === i) {
+				var dv = document.createElement("p"); dv.className = "note preset-diff";
+				dv.textContent = "Will change: " + presetDiff.text + ".";
+				box.appendChild(dv);
+			}
 		});
 	}
 	function addPresets(add) {
@@ -352,12 +385,14 @@
 			msg("Factory reset sent. The adapter is restarting; rejoin its Wi-Fi and reload this page in about a minute.");
 		};
 		$("preset-save").onclick = function () {
-			var name = $("preset-name").value.trim().slice(0, 40), s = currentSettings();
+			var name = $("preset-name").value.trim().slice(0, 40), snap = snapshotSettings(), s = snap.settings;
 			if (!name) { msg("Type a name for the preset first.", "bad"); return; }
-			if (!Object.keys(s).length) { msg("No saved settings to store yet.", "bad"); return; }
+			if (!Object.keys(s).length) { msg("The adapter's settings could not be read, so there is nothing to store.", "bad"); return; }
 			var ok = addPresets([{name: name, settings: s}]);
 			$("preset-name").value = "";
-			msg(ok ? "Saved preset \"" + name + "\" on this phone." : "Preset kept for this visit only: Safari would not store it (private mode?). Export a file to keep it.", ok ? "" : "bad");
+			var left = snap.omitted.length ? " Not included (no value to restore): " + snap.omitted.join(", ") + "." : "";
+			msg((ok ? "Saved preset \"" + name + "\" on this phone." : "Preset kept for this visit only: Safari would not store it (private mode?). Export a file to keep it.") + left,
+				ok && !left ? "" : "bad");
 			renderAll();
 		};
 		$("cfg-export").onclick = function () {
@@ -366,7 +401,9 @@
 			var a = $("cfg-dl"), url = URL.createObjectURL(new Blob([JSON.stringify(d, null, 1)], {type: "application/json"}));
 			a.href = url; a.download = "carlinkit-settings-" + d.exported.slice(0, 10) + ".json"; a.click();
 			setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
-			msg("Exported the saved settings and " + d.presets.length + " preset(s). Choose Save to Files if Safari asks.");
+			var om = snapshotSettings().omitted;
+			msg("Exported the saved settings and " + d.presets.length + " preset(s). Choose Save to Files if Safari asks." +
+				(om.length ? " Not included (no value to restore): " + om.join(", ") + "." : ""));
 		};
 		$("cfg-import").onchange = async function () {
 			var f = this.files && this.files[0];
@@ -393,6 +430,7 @@
 			$("set-conn").appendChild(b);
 		}
 		if (root.CPFW) root.CPFW.mount($("fw-panel"), {
+			builtin: true,
 			busyOthers: function () {
 				if (root.CPDiag && root.CPDiag.busy()) return "wait until the debug ZIP is ready.";
 				if (saving) return "wait until the setting is saved.";

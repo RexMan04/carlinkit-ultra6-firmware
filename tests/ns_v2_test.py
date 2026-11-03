@@ -23,9 +23,22 @@ def arg(name, default):
 ROOTFS = arg("--rootfs", f"{FW}/tier1/rootfs_stock_exact")
 QEMU = arg("--qemu", f"{HOME}/tools/qemu-user/qemu-arm-static")
 OUT = arg("--out", f"{FW}/review/mainpage-v020/ns")
-APPLETS = ["cat", "awk", "tr", "ls", "sed", "cut", "df", "sleep", "md5sum", "flock", "setsid", "rm"]
+APPLETS = ["cat", "awk", "tr", "ls", "sed", "cut", "df", "sleep", "md5sum", "flock", "setsid", "rm", "dd"]
 IMG = os.urandom(300000)
 IMG_MD5 = hashlib.md5(IMG).hexdigest()
+BOUNDARY = "----WebKitFormBoundaryq1w2e3r4"
+
+
+def multipart(name, data):
+    return (f'--{BOUNDARY}\r\nContent-Disposition: form-data; name="chunk"; filename="{name}"\r\n'
+            'Content-Type: application/octet-stream\r\n\r\n').encode() + data + f'\r\n--{BOUNDARY}--\r\n'.encode()
+
+
+# The data part deliberately contains text that looks like another filename header.
+CHUNK = bytes(range(256)) + b'filename="' + b"B" * 300 + b'"' + b"\x00\xff" * 100
+BODIES = {"ok": multipart("cpthru.swu.1", CHUNK), "last": multipart("cpthru.swu:" + IMG_MD5 + ".2", b"xy"),
+          "long": multipart("A" * 300 + ".swu.1", b"x"), "badname": multipart("evil.swu.1", b"x"),
+          "badsum": multipart("cpthru.swu:" + "Z" * 32 + ".2", b"x"), "big": multipart("cpthru.swu.1", b"x" * 13000)}
 LONG = "A" * 200 + ".swu"
 Q = "/qemu-arm-static"
 ENV = "CPTHRU_REAL=/fake CPTHRU_CGIDIR=/cgi CPTHRU_STAGE=/mnt/UDISK/swupdate"
@@ -67,11 +80,19 @@ def driver():
         cgi("cpthru_update.cgi", f"op=install&name={LONG}&size={len(IMG)}&md5={IMG_MD5}", "inst_long.txt"),
         "[ -e /tmp/cpthru.install ] && echo yes > /out/marker_after_reject",
         # downfile gateway: stdin/stdout byte-exact, holds the lock while running
-        f"{ENV} CONTENT_LENGTH=6 REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/body.bin > /out/down_pass.txt 2> /out/down_pass.err",
-        f"( {ENV} SLOW=3 CONTENT_LENGTH=6 REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/body.bin > /out/down_slow.txt 2>&1 ) &",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['ok'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_ok.txt 2> /out/down_ok.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['last'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/last.bin > /out/down_last.txt 2> /out/down_last.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['long'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/long.bin > /out/down_long.txt 2> /out/down_long.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['badname'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/badname.bin > /out/down_badname.txt 2> /out/down_badname.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['badsum'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/badsum.bin > /out/down_badsum.txt 2> /out/down_badsum.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['big'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/big.bin > /out/down_big.txt 2> /out/down_big.err",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['ok']) + 5} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_short.txt 2> /out/down_short.err",
+        f"{ENV} CONTENT_LENGTH=abc REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_nolen.txt 2> /out/down_nolen.err",
+        "ls /tmp > /out/tmp_after_chunks.txt",
+        f"( {ENV} SLOW=3 CONTENT_LENGTH={len(BODIES['ok'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_slow.txt 2>&1 ) &",
         "slow=$!",
         "/qemu-arm-static /bin/busybox sleep 1",
-        f"{ENV} CONTENT_LENGTH=6 REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/body.bin > /out/down_busy.txt 2>&1",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['ok'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_busy.txt 2>&1",
         cgi("factoryreset.cgi", "", "factory_busy.txt"),
         # install while a chunk holds the lock: waits for it (drain), then installs
         "t0=$SECONDS",
@@ -81,7 +102,7 @@ def driver():
         "/qemu-arm-static /bin/busybox sleep 1",
         cgi("cpthru_update.cgi", f"op=install&name=cpthru.swu&size={len(IMG)}&md5={IMG_MD5}", "inst_again.txt"),
         cgi("cpthru_update.cgi", "op=state", "state_started.txt"),
-        f"{ENV} CONTENT_LENGTH=6 REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/body.bin > /out/down_after.txt 2>&1",
+        f"{ENV} CONTENT_LENGTH={len(BODIES['ok'])} REQUEST_METHOD=POST {Q} /bin/sh /cgi/downfile.cgi < /fixtures/ok.bin > /out/down_after.txt 2>&1",
         cgi("factoryreset.cgi", "", "factory_after.txt"),
         cgi("cpthru_set.cgi", "key=persist.cpthru.off&value=1", "set_after.txt"),
         cgi("submition.cgi", f"filename=cpthru.swu&", "submition_direct.txt"),
@@ -131,7 +152,8 @@ def main():
         os.chmod(f"{scratch}/tmp", 0o1777)
         write(f"{scratch}/mnt/UDISK/swupdate/cpthru.swu", IMG)
         write(f"{scratch}/mnt/UDISK/swupdate/swupdate.log", "line one\nswupdate: \"quoted\" \\ back\n" * 5)
-        write(f"{scratch}/fixtures/body.bin", b"ab\x00\xffcd")
+        for k, v in BODIES.items():
+            write(f"{scratch}/fixtures/{k}.bin", v)
         for n in ("cpthru_settings.cgi", "cpthru_set.cgi", "cpthru_update.cgi", "downfile.cgi", "submition.cgi", "factoryreset.cgi"):
             shutil.copy(f"{REPO}/web/cgi-bin/{n}", f"{scratch}/cgi/{n}")
         for a in APPLETS:
@@ -139,7 +161,7 @@ def main():
         write(f"{scratch}/w/getprop", '#!/hostbin/bash\n[ -f "/props/$1" ] && printf "%s\\n" "$(</props/$1)"\nexit 0\n', 0o755)
         write(f"{scratch}/w/setprop", '#!/hostbin/bash\nprintf "%s" "$2" > "/props/$1"; echo "noise on stdout"\n', 0o755)
         # Fakes of the moved stock binaries.
-        write(f"{scratch}/fake/downfile.cgi", '#!/hostbin/bash\nb=$(od -An -tx1 | tr -d " \\n")\n'
+        write(f"{scratch}/fake/downfile.cgi", '#!/hostbin/bash\nb=$(od -v -An -tx1 | tr -d " \\n")\n'
               '[ -n "${SLOW:-}" ] && sleep "$SLOW"\n'
               'printf "Content-Type: text/html\\n\\nbody=%s cwd=%s\\nwrite data------success\\n" "$b" "$PWD"\n', 0o755)
         write(f"{scratch}/fake/submition.cgi", '#!/hostbin/bash\necho "launch qs=$QUERY_STRING cwd=$PWD" >> /out/launch.log\n', 0o755)
@@ -196,9 +218,15 @@ def main():
         check(J("inst_long.txt").get("error") == "unexpected file name", "200-char name refused (install)")
         check(not os.path.exists(f"{o}/marker_after_reject"), "rejected installs leave no marker")
 
-        dp = T("down_pass.txt")
-        check("body=6162" + "00ff" + "6364" in dp and "cwd=/cgi" in dp and dp.startswith("Content-Type: text/html\n\n"),
-              "downfile gateway passes stdin/stdout byte-exact, cwd = CGI dir", dp[:200])
+        dp = T("down_ok.txt")
+        check("body=" + BODIES["ok"].hex() + " " in dp and "cwd=/cgi" in dp and dp.startswith("Content-Type: text/html\n\n"),
+              "downfile gateway passes the exact request bytes, cwd = CGI dir", dp[:200])
+        check("body=" + BODIES["last"].hex() + " " in T("down_last.txt"), "final chunk name with MD5 accepted")
+        for k, why in [("long", "unexpected file name"), ("badname", "unexpected file name"), ("badsum", "bad checksum field"),
+                       ("big", "bad request length"), ("short", "request length mismatch"), ("nolen", "bad request length")]:
+            t = T(f"down_{k}.txt")
+            check(("upload refused: " + why) in t and "body=" not in t, f"downfile gateway refuses {k} before the stock binary", t[:160])
+        check(not any(x.startswith("cpthru.chunk") for x in T("tmp_after_chunks.txt").split()), "no buffered chunks left in /tmp")
         check("upload refused" in T("down_busy.txt") and "fail" in T("down_busy.txt"), "second chunk refused while one holds the lock", T("down_busy.txt")[:200])
         check("refused" in T("factory_busy.txt"), "factory reset refused while a chunk holds the lock")
         check("write data------success" in T("down_slow.txt"), "slow chunk completed", T("down_slow.txt")[:200])

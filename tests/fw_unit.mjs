@@ -111,9 +111,18 @@ r = await FW.analyze(rebuild(rel, setManifest(JSON.stringify({...good, name: '..
 ok(r.ok && r.name === 'cpthru.swu', 'a manifest cannot choose the staged name');
 ok(FW.NAMES.every(x => x.length <= 40 && /^[A-Za-z0-9._-]+\.swu$/.test(x)), 'closed staged-name set, all <= 40 bytes');
 // 6. describe()
-const d1 = FW.describe({system: 'S', release: {version: '0.2.0-test.1', release_id: meta.manifest.release_id}}, {kind: 'project', release_id: meta.manifest.release_id});
-ok(d1.match === true, 'describe match');
-ok(FW.describe({system: 'S', release: null, shim: '1b93a4b1163f'}, {kind: 'project', release_id: 'aaaaaaaaaaaa'}).match === false, 'shim id never matches a release');
-ok(FW.describe({system: 'S', release: null, shim: null}, {kind: 'stock'}).match === true, 'stock after rollback');
-ok(FW.describe({system: 'S', release: {release_id: 'x'}, shim: null}, {kind: 'stock'}).match === false, 'still project after rollback');
+const R = (rs, rel, ss, shim) => ({system: 'S', releaseState: rs, release: rel, shimState: ss, shim});
+const relObj = {version: '0.2.0-test.1', release_id: meta.manifest.release_id};
+const P = {kind: 'project', release_id: meta.manifest.release_id}, ST = {kind: 'stock'}, LG = {kind: 'legacy', shim: '1b93a4b1163f'};
+ok(FW.describe(R('valid', relObj, 'valid', '1b93a4b1163f'), P).match === true, 'project match');
+ok(FW.describe(R('valid', {release_id: 'aaaaaaaaaaaa'}, 'valid', 'x'), P).match === false, 'other release');
+ok(FW.describe(R('absent', null, 'valid', '1b93a4b1163f'), P).match === false, 'shim id never matches a release');
+ok(FW.describe(R('unknown', null, 'valid', '1b93a4b1163f'), P).match === null, 'release request failed -> unknown');
+ok(FW.describe(R('absent', null, 'absent', null), ST).match === true, 'stock confirmed only by two 404s');
+ok(FW.describe(R('unknown', null, 'absent', null), ST).match === null, 'rollback not confirmed when release request failed');
+ok(FW.describe(R('absent', null, 'unknown', null), ST).match === null, 'rollback not confirmed when status request failed');
+ok(FW.describe(R('valid', relObj, 'valid', 'x'), ST).match === false, 'still project after rollback');
+ok(FW.describe(R('absent', null, 'valid', '1b93a4b1163f'), LG).match === true, 'legacy by shim with release absent');
+ok(FW.describe(R('unknown', null, 'valid', '1b93a4b1163f'), LG).match === null, 'legacy unknown when release unknown');
+ok(FW.sameIdentity(R('valid', relObj, 'valid', 'a'), R('valid', relObj, 'valid', 'a')) && !FW.sameIdentity(R('absent', null, 'valid', 'a'), R('valid', relObj, 'valid', 'a')), 'sameIdentity');
 console.log(`${n} firmware-check unit assertions passed`);

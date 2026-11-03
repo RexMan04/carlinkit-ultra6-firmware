@@ -101,6 +101,9 @@ const scenarios = {
     assert.equal(exported.format, 'carlinkit-ultra6-settings');
     assert.equal(exported.presets[0].name, 'Kia daily');
     assert.equal(exported.current['persist.sys.wifi.channel'], '149');
+    assert.equal(exported.current['persist.sys.headunit.gps.disable'], '0', 'unset GPS exported as its default (on)');
+    assert(!('persist.sys.carplay.audio.media.samplerate' in exported.current), 'unset with no known default is left out');
+    assert.match(await page.locator('#msg').textContent(), /Not included \(no value to restore\): Audio stream mode/);
     // change a setting, then import the file and apply its "current" preset
     await chip(page, 'persist.sys.wifi.channel', '36').click(); await chip(page, 'persist.sys.wifi.channel', 'Tap again').click();
     await page.waitForFunction(() => document.querySelector('[id="st-persist.sys.wifi.channel"] .chip.sel').textContent === '36');
@@ -113,7 +116,10 @@ const scenarios = {
     assert.match(m, /Nothing was changed on the adapter/);
     const sets = A.S.sets.length;
     const apply = page.locator('.preset', {hasText: 'Imported'}).locator('button', {hasText: 'Apply'});
-    await apply.click(); await page.locator('.preset', {hasText: 'Imported'}).locator('button', {hasText: 'Tap again'}).click();
+    await apply.click();
+    assert.equal(A.S.sets.length, sets, 'first tap only shows the diff');
+    assert.match(await page.locator('.preset-diff').textContent(), /Will change: Hotspot channel: 36 \u2192 149\./);
+    await page.locator('.preset', {hasText: 'Imported'}).locator('button', {hasText: 'Tap again'}).click();
     await page.waitForFunction(() => /Preset "Imported/.test(document.getElementById('msg').textContent));
     assert.deepEqual(A.S.sets.slice(sets), [['persist.sys.wifi.channel', '149']], 'only the differing, valid setting is written');
     // presets survive a reload (localStorage)
@@ -222,6 +228,53 @@ const scenarios = {
     release(); A.S.holdMinizip = null;
     await page.waitForFunction(() => /Ready/.test(document.querySelector('.cpd-state').textContent), null, {timeout: 60000});
     assert.equal(A.S.chunks.length, 0);
+    assert.deepEqual(t.errors, []); await t.close();
+  },
+  async gateway_down(b) {
+    const t = await open(b), {page, A} = t;
+    await page.locator('#fw-panel .fw-file').setInputFiles(REL);
+    await waitMsg(page, /Valid image/);
+    await page.locator('#fw-panel .fw-up').click();
+    await waitMsg(page, /Uploaded and verified/);
+    A.S.hooks.state = () => 'drop';
+    await page.locator('#fw-panel .fw-inst').click(); await page.locator('#fw-panel .fw-inst').click();
+    await waitMsg(page, /Not installed: the adapter's updater did not answer/, 30000);
+    assert.equal(A.S.launches.length, 0); assert.equal(A.S.submition || 0, 0, 'no fallback to the stock install URL');
+    A.S.hooks.state = null;
+    await page.locator('#fw-panel .fw-inst').click(); await page.locator('#fw-panel .fw-inst').click();
+    await waitMsg(page, /Done: the adapter is back and runs what you installed/, 60000);
+    assert.equal(A.S.launches.length, 1);
+    assert.deepEqual(t.errors, []); await t.close();
+  },
+  async rollback_unknown(b) {
+    const t = await open(b), {page, A} = t;
+    await page.locator('#fw-panel .fw-file').setInputFiles(STOCK);
+    await waitMsg(page, /Valid stock firmware/);
+    await page.locator('#fw-panel .fw-up').click();
+    await waitMsg(page, /Uploaded and verified/);
+    A.S.hooks.release = () => 500;  // release file request fails after the restart
+    await page.locator('#fw-panel .fw-inst').click(); await page.locator('#fw-panel .fw-inst').click();
+    await waitMsg(page, /could not be identified yet/, 60000);
+    await page.waitForTimeout(7000);
+    assert.doesNotMatch(await msgOf(page), /Done/, 'no rollback claim while identity is unknown');
+    assert(await page.evaluate(() => !!localStorage.getItem('cpthru.pendingInstall')), 'pending install kept');
+    A.S.hooks.release = null;
+    await waitMsg(page, /Done: the adapter is back and runs what you installed\. The adapter reports stock firmware/, 30000);
+    assert.equal(A.S.launches.length, 1);
+    assert.deepEqual(t.errors, []); await t.close();
+  },
+  async reinstall_no_outage(b) {
+    // Same release again, restart too quick to observe: completion comes from the uptime reset.
+    const t = await open(b, {restartMs: 0}), {page, A} = t;
+    A.S.restartDelay = 0;
+    await page.locator('#fw-panel .fw-file').setInputFiles(REL);
+    await waitMsg(page, /Valid image/);
+    await page.locator('#fw-panel .fw-up').click();
+    await waitMsg(page, /Uploaded and verified/);
+    A.S.down = false;
+    await page.locator('#fw-panel .fw-inst').click(); await page.locator('#fw-panel .fw-inst').click();
+    await waitMsg(page, /Done: the adapter is back and runs what you installed/, 60000);
+    assert.equal(A.S.launches.length, 1);
     assert.deepEqual(t.errors, []); await t.close();
   },
   async bookmark(b, name) {

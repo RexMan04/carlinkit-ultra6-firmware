@@ -22,7 +22,7 @@ the iPhone joined to the adapter's Wi-Fi the whole time.
 Those versions have no built-in updater, so Safari needs a bookmark once.
 
 1. Copy the whole `bookmarklet.txt` from the release, including `javascript:`.
-   It is long (about 26,000 characters); copy all of it.
+   It is long (about 29,000 characters); copy all of it.
 2. In Safari, bookmark any page, then open Bookmarks, touch and hold it, tap
    **Edit**, and replace its address with the copied text. Safari only allows
    this by hand; no website can add it for you.
@@ -34,12 +34,18 @@ Those versions have no built-in updater, so Safari needs a bookmark once.
    on, updates use the page itself; the bookmark is not needed again.
 
 If Safari will not keep the long bookmark, use `bookmarklet-compact.txt`
-instead (about 6,500 characters). It only uploads and checks the exact 0.2.0-test.1
-or stock image. After it says **Uploaded and verified**, open this once:
+instead (about 6,500 characters). It only uploads and checks the exact
+0.2.0-test.1 image or the stock image, and it never installs by itself. After
+it says **Uploaded and verified**, open the ONE address that matches the file
+it named, once:
 
-```text
-http://192.168.50.100/cgi-bin/submition.cgi?filename=cpthru.swu&
-```
+- Release 0.2.0-test.1 (it says `cpthru.swu`):
+  `http://192.168.50.100/cgi-bin/submition.cgi?filename=cpthru.swu&`
+- Stock rollback (it says `v5_202610121756_STOCK_rollback.swu`):
+  `http://192.168.50.100/cgi-bin/submition.cgi?filename=v5_202610121756_STOCK_rollback.swu&`
+
+Opening the other address does nothing useful: the adapter only holds the
+file you just uploaded.
 
 ## What the checks mean, and what they don't
 
