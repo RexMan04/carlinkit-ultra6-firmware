@@ -8,6 +8,7 @@ preview/
 *.swu
 *.zip
 *.png
+!docs/screenshots/*.png
 *.jpg
 *.jpeg
 *.webm

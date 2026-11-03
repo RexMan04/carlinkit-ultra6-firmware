@@ -9,63 +9,79 @@ the stock transcoder available for AirPlay and fallback.
 
 ## Current result
 
-As of November 3, 2026, the custom image is installed on one adapter. Its
-status page reports active pass-through and no fallbacks. Live input/output
-remain around 8 fps during movement, so the performance goal is **not yet
-achieved**. This is an investigation, not a stable release or a demonstrated
-60 fps upgrade.
+As of November 3, 2026, a custom pass-through image is installed on one
+adapter. Its status page reports active pass-through and no fallbacks. Live
+input/output stay around 8 fps during movement, so the performance goal is
+**not yet achieved**. This is an investigation, not a stable release or a
+demonstrated 60 fps upgrade.
 
-## Diagnostic test build (`passthru_diag`)
+## Latest test release: 0.2.0-test.1
 
-This is a **test build for measurements, not a performance fix**. It keeps the
-same pass-through forwarding and adds:
+A usability release. Video forwarding is unchanged.
 
-- frame-hook timing in the shim (callback time, time between frames, idle
-  gaps, lock waits, car-send time, sends over 16/33/100 ms) using the
-  firmware's 1 ms clock, kept as the last 24 five-second windows (~2 min);
-- the last display mode the shim returned from `sd_get_info_int` (what the
-  adapter asked for, not proof of what the phone was told);
-- a **Diagnostics & debug ZIP** section on the adapter's main page
-  (`http://192.168.50.100`) and on `/cpthru.html`, plus a read-only snapshot
-  CGI (version, storage, saved log setting, CPU and sdDongle threads over 1 s).
+- **One main page** at `http://192.168.50.100`: live input/output frame
+  rates, bitrate, mode and fallbacks; every supported setting; presets with
+  export/import; firmware update; debug ZIP; recovery; device info.
+- **Built-in updater**: choose an SWU in Files, the phone validates and
+  identifies it, upload with progress, the adapter verifies it, then a
+  separate **Install firmware** button. Future project releases install from
+  the page with no new bookmark.
+- **Recovery**: stock video processing, reset project settings, stock
+  factory reset, and stock rollback through the same updater (rollback not
+  yet tested on an adapter).
 
-Base: Carlinkit Mini Ultra 6, Allwinner v553, stock `v5_202610121756`
-(`platform=v553`, `custom=yunlianAm`, version `202610121756C`). Do not assume
-compatibility with any other model or firmware. The image, its build ID and
-SHA256/MD5 are published in the release notes with
-`v5_202610121756_passthru_diag.json`.
+![Main page, live status and settings (sample data)](docs/screenshots/main-top.png)
+![Firmware update after upload verification (sample data)](docs/screenshots/update-uploaded.png)
 
-In this test build the stock main page's **automatic log upload, online
-version check and periodic usage reporting to the vendor are switched off**.
-Other stock settings keep working. The stock feedback form still sends its
-typed text to the vendor if you press its Submit button, but no logs are
-attached.
-
-### Collect a debug ZIP
-
-1. Park the car. Show a moving map or scroll a list on the car screen for
-   about 30 seconds.
-2. On the iPhone, join the adapter's Wi-Fi, open `http://192.168.50.100` in
-   Safari, and tap **Prepare debug ZIP**. Use one phone and one tab only.
-3. When it says Ready, tap **Download debug ZIP** and save it in Files.
-
-The ZIP holds the adapter's own log ZIP byte for byte plus `status.json`,
-`system.txt`, `manifest.json` and a README. If the adapter's log export fails
-(low space, timeout, bad ZIP), you get a clearly labelled diagnostics-only
-ZIP instead. If the page warns that log saving is off
-(`persist.console.log.nosave=1`), the stock logs will not include this boot.
-The logs are **unredacted** and may contain device or phone identifiers;
-nothing is uploaded, so share the file deliberately.
+Screenshots come from the test mock with sample data, not a live adapter.
 
 ### Install
 
-Follow the [phone installation steps](phone-upload-diag/README.md). The
-diagnostic helper accepts only this exact test image and the stock rollback
-image. Upload verification and the explicit flash request are separate steps.
-Upload verification does not prove installation compatibility.
+See the [phone steps](phone-upload-v2/README.md). Short version:
 
-Later milestones, not in this build: a full settings page redesign and an
-integrated local updater/flash flow.
+- **Adapter already on 0.2+**: download the `.swu`, open
+  `http://192.168.50.100`, Firmware update, choose it, Upload and verify,
+  Install firmware.
+- **First install** (stock, original pass-through or diagnostics.1): Safari
+  needs the release's `bookmarklet.txt` saved as a bookmark once (one manual
+  URL edit). Run it on the adapter page and use the same Upload / Install
+  steps.
+
+### Settings on the page
+
+Each control writes exactly the property the stock CGI writes, with the stock
+values (checked against the extracted stock `setprop.cgi`, `audioselect.cgi`
+and page scripts):
+
+| Setting | Property | Values | Takes effect |
+|---|---|---|---|
+| CarPlay video | `persist.cpthru.off` | pass-through / stock processing | next CarPlay connection |
+| Audio delay | `persist.suding.wl.audio.latency` | phone decides, 300-1000 ms | next CarPlay connection |
+| Audio stream mode | `persist.sys.carplay.audio.media.samplerate` | 44.1 / 48 kHz | after restart |
+| Hotspot channel | `persist.sys.wifi.channel` | 36-48, 149-161 | after restart |
+| Startup delay | `persist.sys.boot.delay` | 0-60 s | next power-on |
+| Car GPS to iPhone | `persist.sys.headunit.gps.disable` | on / off | next CarPlay connection |
+| Force display | `persist.suding.wireless.carplay.force.display` | off / on | next CarPlay connection |
+
+"Takes effect" for the stock settings is expected behavior, not yet
+confirmed on the adapter. There are no frame-rate, resolution or bitrate
+controls: nothing in this firmware makes them work, and a 60 fps setting
+would not prove 60 fps output.
+
+### Known limits
+
+- Still about 8 fps in the owner's car; cause unresolved. Use **Debug ZIP**.
+- The checks prove a file is intact and built on the stock base, not who made
+  it. There is no signature.
+- Installing rewrites recovery, kernel and system. No recovery mode is known
+  if that fails. Stock rollback is untested on a real adapter.
+- The stock language menu, vendor online update, vendor feedback form and
+  activation screen are not on the new page; rollback restores them.
+
+## Diagnostic test build (0.1.0-diagnostics.1)
+
+The previous release added frame-hook timing and the debug ZIP; both are part
+of 0.2. Its phone steps are in [phone-upload-diag](phone-upload-diag/README.md).
 
 ## Source map
 
@@ -73,11 +89,19 @@ integrated local updater/flash flow.
 - `web/`: adapter settings/status interface and allowlisted local CGIs.
 - `build_fw.py`: rebuilds and verifies a firmware derived from the exact stock
   image, preserving kernel/recovery payload bytes.
+- `web/index.html`, `cpthru_main.js`, `cpthru_fw.js`: 0.2 main page and the
+  firmware updater (shared with the first-install bookmark);
+  `web/cgi-bin/cpthru_update.cgi` and the `downfile`/`submition`/
+  `factoryreset` gateways lock staging and start the stock installer once.
+- `phone-upload-v2/`: generic first-install bookmark (`build-v2.mjs`) and a
+  compact exact-image fallback (`spec-v020.json`).
 - `phone-upload/`: original reviewed upload-only Safari bookmarklet;
   `build.mjs --spec spec-diag.json` generates the diagnostic-image helper in
   `phone-upload-diag/` without touching the original files.
-- `tests/`: namespace-isolated QEMU tests (stock log exporter and new CGIs on
-  the device busybox) and browser tests of the diagnostics panel.
+- `tests/`: namespace-isolated QEMU tests on the device busybox (stock log
+  exporter, diagnostics CGIs, 0.2 update/settings CGIs and gateways), the
+  firmware-check unit tests, a stateful mock adapter, and WebKit/Chromium
+  tests of the main page, updater and bookmark.
 - `phone-debug/`: temporary download-only log bookmarklet.
 - Development notes will document verified behavior and remaining questions.
 
@@ -101,7 +125,19 @@ bun tests/diag_browser.mjs --fixture ~/models/staging/carlinkit-ultra6-fw/review
 python3 build_fw.py passthru_diag
 bun phone-upload/build.mjs --spec phone-upload/spec-diag.json
 bun phone-upload/test.mjs --dir phone-upload-diag
+# 0.2
+python3 build_fw.py release
+bun tests/fw_unit.mjs
+python3 -I tests/ns_v2_test.py
+bun phone-upload/build-v2.mjs
+bun phone-upload/build.mjs --spec phone-upload/spec-v020.json
+bun tests/main_browser.mjs
+bun phone-upload/test.mjs --dir phone-upload-v020-compact
+bun tests/preview_server.mjs     # local preview with a simulated adapter
 ```
+
+Run `make -C shim qemu-test` separately from `tests/ns_test.py`: it touches
+host `/tmp/cpthru.build`, which trips that test's host-change check.
 
 QEMU proves loading and hook binding, not real-time performance on the adapter.
 `build_fw.py passthru` is retired so it can never overwrite the delivered

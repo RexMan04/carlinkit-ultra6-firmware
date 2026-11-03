@@ -36,10 +36,10 @@ for v in 200 299 1100 350 -1 "" "400;id" '$(id)' '400`id`' "400%0aid" "1e3"; do
 done
 out=$(run cpthru_set.cgi "key=persist.cpthru.off&value=1")
 check '[ "$(cat $T/props/persist.cpthru.off)" = "1" ]' "switch off"
-for k in "persist.sys.wifi.channel" "persist.cpthru.off;id" "persist.cpthru" '*' ""; do
+for k in "persist.sys.cp.showui" "persist.cpthru.off;id" "persist.cpthru" '*' ""; do
 	out=$(run cpthru_set.cgi "key=$k&value=0")
 	check 'echo "$out" | grep -q "unknown setting"' "key '$k' rejected"
-	check '[ ! -e "$T/props/persist.sys.wifi.channel" ]' "nothing written for '$k'"
+	check '[ ! -e "$T/props/persist.sys.cp.showui" ]' "nothing written for '$k'"
 done
 touch "$T/glob-me"
 out=$(cd "$T" && run cpthru_set.cgi "key=*&value=*")

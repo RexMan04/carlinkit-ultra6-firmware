@@ -1,0 +1,20 @@
+{
+  "note": "Compact fallback first-install helper (upload only, exact hashes) for release 0.2.0-test.1 and the stock rollback. Use the generic phone-upload-v2 bookmark first; this one exists in case Safari will not take the long bookmark. Paths are relative to ~/models/staging/carlinkit-ultra6-fw.",
+  "out": "phone-upload-v020-compact",
+  "images": [
+    {
+      "path": "release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.swu",
+      "metadata": "release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.json",
+      "name": "cpthru.swu",
+      "label": "Release 0.2.0-test.1"
+    },
+    {
+      "path": "v5_202610121756.swu",
+      "name": "v5_202610121756_STOCK_rollback.swu",
+      "label": "Stock rollback",
+      "md5": "8cda8cf273d665c80b2a4b217b9bdf44",
+      "sha256": "6e56e9a7952b7c39081258d9be37cbc0ba81801596da2018bc373ea9d404b30a",
+      "size": 27578368
+    }
+  ]
+}

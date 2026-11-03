@@ -1,0 +1,18 @@
+[
+  {
+    "path": "release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.swu",
+    "name": "cpthru.swu",
+    "label": "Release 0.2.0-test.1",
+    "md5": "abaca7fff2d9bbfe09636f9d3743ddc5",
+    "size": 27578368,
+    "sha256": "8ca7d29e74185712df3c4e50237b9ddd97ac7d99998deac40c88c5dc945b7598"
+  },
+  {
+    "path": "v5_202610121756.swu",
+    "name": "v5_202610121756_STOCK_rollback.swu",
+    "label": "Stock rollback",
+    "md5": "8cda8cf273d665c80b2a4b217b9bdf44",
+    "sha256": "6e56e9a7952b7c39081258d9be37cbc0ba81801596da2018bc373ea9d404b30a",
+    "size": 27578368
+  }
+]

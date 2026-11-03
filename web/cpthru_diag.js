@@ -437,6 +437,7 @@
 
 	function sha256(bytes) {
 		var C = root.CryptoJS;
+		if (!C && root.CPFW) { try { return root.CPFW.sha256().update(bytes).hex(); } catch (e) { return null; } }
 		try {
 			return C && C.SHA256 && C.lib && C.lib.WordArray ? C.SHA256(C.lib.WordArray.create(bytes)).toString() : null;
 		} catch (e) { return null; }
@@ -462,7 +463,7 @@
 			'border-radius:8px;border:2px solid var(--good-fg,#1b6631);color:var(--good-fg,#1b6631);text-decoration:none;font-weight:600">Download debug ZIP</a>' +
 			'<p class="cpd-note" style="font-size:13px;color:var(--muted,#5f6b76);margin:.4em 0">Use one phone and one tab at a time: the ' +
 			'adapter\'s log exporter has no lock. The ZIP holds unredacted adapter logs that may include device or phone ' +
-			'identifiers; share it deliberately. Nothing is uploaded. In this test build the stock automatic log upload, ' +
+			'identifiers; share it deliberately. Nothing is uploaded. The stock automatic log upload, ' +
 			'online version check and usage reporting are switched off.</p>';
 		var $ = function (c) { return el.querySelector("." + c); };
 		var tbody = $("cpd-rows").tBodies[0], warn = $("cpd-warn"), btn = $("cpd-prepare"),
@@ -514,6 +515,7 @@
 			if (busy) return; /* double taps */
 			var upgrade = document.getElementById("download_btn"), progress = document.getElementById("download-bar");
 			if (document.getElementById("carlinkit-local-upload") || stockUpdateActive || root.program_filename ||
+				(root.CPFW && (root.CPFW.busy() || root.CPFW.installing())) ||
 				(upgrade && upgrade.disabled) || (progress && (progress.value > 0 || getComputedStyle(progress).display !== "none"))) {
 				say("Not started: a firmware upload or update helper is active. Finish the update before collecting logs on a fresh page.");
 				return;
@@ -570,7 +572,7 @@
 						r.stock = {included: true, error: null, bytes: bytes.length, entries: info.entries,
 							names: info.names, sha256: sha256(bytes)};
 						if (!info.entries) r.warnings.push("The stock log ZIP has no files in it.");
-						if (r.stock.sha256 === null) r.missing.push("stock_logs.sha256: CryptoJS unavailable");
+						if (r.stock.sha256 === null) r.missing.push("stock_logs.sha256: no hash function available");
 						r.complete = true;
 					} catch (e) {
 						bytes = null;

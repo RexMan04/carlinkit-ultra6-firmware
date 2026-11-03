@@ -17,8 +17,14 @@
 #             query and usage telemetry (NEXT_TEST_PLAN.md). Written to its own
 #             directory (DIAG_DIR) with release metadata; refuses to replace
 #             an existing different image unless --replace is given.
+#   release   0.2 TEST release (MAINPAGE_PLAN.md): the same shim; a new main
+#             page with settings, presets, recovery, debug ZIP and a built-in
+#             updater replaces the stock page and its assets; the stock
+#             upload/install/reset CGIs move to /usr/lib/cpthru behind locking
+#             gateways; a release manifest goes into cpthru-release.json and
+#             the rootfs padding. Written to RELEASE_DIR/<version>/.
 #
-# Usage: build_fw.py tier1|passthru_diag [--replace]   build + verify
+# Usage: build_fw.py tier1|passthru_diag|release [--replace]   build + verify
 #        build_fw.py --selftest          repack untouched stock, expect identical
 #        build_fw.py --patch-index SHTTPD_DIR OUT
 #                     check the stock page inventory in SHTTPD_DIR and write the
@@ -70,6 +76,32 @@ DIAG_WEB_FILES = dict(WEB_FILES, **{
     f"{WEB}/cgi-bin/cpthru_snapshot.cgi": ("cgi-bin/cpthru_snapshot.cgi", 0o744),
     f"{WEB}/cgi-bin/cpthru_json.awk": ("cgi-bin/cpthru_json.awk", 0o644),  # status CGI's JSON check
 })
+RELEASE_VERSION = "0.2.0-test.1"
+RELEASE_LABEL = "Main page + updater test " + RELEASE_VERSION
+RELEASE_DIR = f"{FW}/release"
+RELEASE_ASSET = f"carlinkit-ultra6-{RELEASE_VERSION}.swu"
+MANIFEST_PATH = f"{WEB}/cpthru-release.json"
+MANIFEST_MAGIC = b"CPTHRU-RELEASE\n"
+# Stock page and its assets, replaced by the new main page.
+REMOVED = [f"{WEB}/{n}" for n in ("index.css", "encapsulation.js", "activation.js", "language.json", "qrcode.min.js",
+                                  "md5.js", "mdm5.js", "01.png", "jquery.min.js", "crypto-js.js")]
+REPLACED = {f"{WEB}/index.html": "index.html"}
+RELEASE_WEB_FILES = {
+    f"{WEB}/cpthru.html": ("cpthru_redirect.html", 0o644),
+    f"{WEB}/cpthru_fw.js": ("cpthru_fw.js", 0o644),
+    f"{WEB}/cpthru_main.js": ("cpthru_main.js", 0o644),
+    f"{WEB}/cpthru_diag.js": ("cpthru_diag.js", 0o644),
+    f"{WEB}/cgi-bin/cpthru_status.cgi": ("cgi-bin/cpthru_status.cgi", 0o744),
+    f"{WEB}/cgi-bin/cpthru_set.cgi": ("cgi-bin/cpthru_set.cgi", 0o744),
+    f"{WEB}/cgi-bin/cpthru_settings.cgi": ("cgi-bin/cpthru_settings.cgi", 0o744),
+    f"{WEB}/cgi-bin/cpthru_update.cgi": ("cgi-bin/cpthru_update.cgi", 0o744),
+    f"{WEB}/cgi-bin/cpthru_snapshot.cgi": ("cgi-bin/cpthru_snapshot.cgi", 0o744),
+    f"{WEB}/cgi-bin/cpthru_json.awk": ("cgi-bin/cpthru_json.awk", 0o644),
+}
+# Stock mutation CGIs: moved out of the web root, same bytes and mode, and
+# replaced in cgi-bin by gateways of the same name.
+GATED = ["downfile.cgi", "submition.cgi", "factoryreset.cgi"]
+GATE_DIR = "usr/lib/cpthru"
 INDEX_ANCHOR = '\t<div class="cpbone">\n\t\t<h1 id="Config"></h1>\n'
 # The diagnostics script goes after every stock script (so the stock
 # functions exist) and runs before window.onload fires.
@@ -232,7 +264,7 @@ def patch_index_diag(s):
     return s2
 
 
-def apply_passthru(tree, diag=False):
+def apply_passthru_core(tree):
     lib = f"{HERE}/shim/build/libcpthru.so"
     run("make", "-C", f"{HERE}/shim", "arm")  # builds and runs check_syms.py
     build_id = next((l for l in run("strings", lib).splitlines() if l.startswith("cpthru-build-id=")), "")
@@ -253,7 +285,11 @@ def apply_passthru(tree, diag=False):
         open(p, "w").write(s)
     keep_time(p, edit)
     print("preloaded libcpthru.so on both sdDongle launch lines in", S11)
+    return {"usr/lib", "usr/lib/libcpthru.so", S11}, build_id
 
+
+def apply_passthru(tree, diag=False):
+    _, build_id = apply_passthru_core(tree)
     web_files = DIAG_WEB_FILES if diag else WEB_FILES
     stock_index = check_stock_web(f"{tree}/{WEB}") if diag else None
     for dst, (src, mode) in web_files.items():
@@ -280,6 +316,107 @@ def apply_passthru(tree, diag=False):
           ("the diagnostics panel + script in index.html" if diag else "a link in index.html"))
     return ({"usr/lib", "usr/lib/libcpthru.so", S11, f"{WEB}/index.html", WEB, f"{WEB}/cgi-bin"}
             | set(web_files)), build_id
+
+
+def file_digest(p):
+    if os.path.islink(p):
+        return "link:" + os.readlink(p)
+    if os.path.isdir(p):
+        return "dir"
+    return hashlib.sha256(open(p, "rb").read()).hexdigest()
+
+
+def release_id(tree, stock_tree, version):
+    """MAINPAGE_PLAN.md MP-06: hash of the version plus every rootfs entry that
+    differs from stock (content/link/dir + mode), and every removed stock path,
+    excluding the generated manifest itself."""
+    def entries(t):
+        out = {}
+        for dp, dns, fns in os.walk(t):
+            for n in dns + fns:
+                p = os.path.join(dp, n)
+                rel = os.path.relpath(p, t)
+                out[rel] = (file_digest(p), oct(os.lstat(p).st_mode))
+        return out
+    a, b = entries(stock_tree), entries(tree)
+    b.pop(MANIFEST_PATH, None)
+    lines = []
+    for path in sorted(set(a) | set(b)):
+        if path not in b:
+            lines.append(f"{path}\tDELETED")
+        elif a.get(path) != b[path]:
+            lines.append(f"{path}\t{b[path][0]}\t{b[path][1]}")
+    text = f"carlinkit-ultra6-release/1\nversion={version}\n" + "".join(l + "\n" for l in lines)
+    return hashlib.sha256(text.encode()).hexdigest()[:12], len(lines)
+
+
+def apply_release(tree, stock_tree):
+    allowed, build_id = apply_passthru_core(tree)
+    w = f"{tree}/{WEB}"
+    # The stock page and its assets go; nothing that stays may refer to them.
+    for rel in REMOVED:
+        assert os.path.isfile(f"{tree}/{rel}"), f"{rel} missing in stock"
+        keep_time(os.path.dirname(f"{tree}/{rel}"), lambda: os.remove(f"{tree}/{rel}"))
+    for dst, src in REPLACED.items():
+        assert os.path.isfile(f"{tree}/{dst}")
+        keep_time(f"{tree}/{dst}", lambda: shutil.copy(f"{HERE}/web/{src}", f"{tree}/{dst}"))
+    for dst, (src, mode) in RELEASE_WEB_FILES.items():
+        assert not os.path.lexists(f"{tree}/{dst}"), f"{dst} already exists in stock"
+        keep_time(os.path.dirname(f"{tree}/{dst}"), lambda: shutil.copy(f"{HERE}/web/{src}", f"{tree}/{dst}"))
+        os.chmod(f"{tree}/{dst}", mode)
+    gd = f"{tree}/{GATE_DIR}"
+    assert not os.path.lexists(gd)
+    keep_time(f"{tree}/usr/lib", lambda: os.makedirs(gd))
+    os.chmod(gd, 0o755)
+    for n in GATED:
+        src = f"{w}/cgi-bin/{n}"
+        st = os.stat(src)
+        shutil.copy2(src, f"{gd}/{n}")
+        os.chmod(f"{gd}/{n}", st.st_mode & 0o7777)
+        assert open(f"{gd}/{n}", "rb").read()[:4] == b"\x7fELF"
+        keep_time(src, lambda: shutil.copy(f"{HERE}/web/cgi-bin/{n}", src))
+        os.chmod(src, 0o744)
+    remaining = {}
+    for dp, dns, fns in os.walk(w):
+        for n in fns:
+            if n.endswith((".html", ".js", ".cgi", ".awk")):
+                remaining[os.path.relpath(os.path.join(dp, n), w)] = open(os.path.join(dp, n), "rb").read()
+    for rel in REMOVED:
+        name = os.path.basename(rel).encode()
+        users = [f for f, b in remaining.items() if name in b]
+        assert not users, f"removed {rel} is still referenced by {users}"
+    for ref in re.findall(rb'src="/?([A-Za-z0-9_.-]+)"', remaining["index.html"]):
+        assert os.path.isfile(f"{w}/{ref.decode()}"), f"index.html loads missing {ref}"
+    rid, n = release_id(tree, stock_tree, RELEASE_VERSION)
+    manifest = {"format": "carlinkit-ultra6-release", "schema": 1, "version": RELEASE_VERSION, "release_id": rid,
+                "shim_build": build_id.split("=", 1)[1], "label": RELEASE_LABEL, "base": "v5_202610121756"}
+    text = json.dumps(manifest, separators=(",", ":"))
+    open(f"{tree}/{MANIFEST_PATH}", "w").write(text + "\n")
+    os.chmod(f"{tree}/{MANIFEST_PATH}", 0o644)
+    print(f"release {RELEASE_VERSION}: release_id {rid} over {n} changed paths; removed {len(REMOVED)} stock assets; "
+          f"gated {', '.join(GATED)}")
+    allowed |= ({f"{WEB}/index.html", WEB, f"{WEB}/cgi-bin", MANIFEST_PATH, "usr/lib", GATE_DIR}
+                | set(REMOVED) | set(RELEASE_WEB_FILES) | {f"{WEB}/cgi-bin/{n}" for n in GATED}
+                | {f"{GATE_DIR}/{n}" for n in GATED})
+    return allowed, build_id, manifest
+
+
+def write_manifest_padding(img, used, manifest, stock_len):
+    """Release manifest at the first 4 KiB boundary after the squashfs data,
+    inside the image's zero padding (squashfs never reads past bytes_used)."""
+    blob = MANIFEST_MAGIC + json.dumps(manifest, separators=(",", ":")).encode() + b"\n"
+    at = -(-used // 4096) * 4096
+    data = bytearray(open(img, "rb").read())
+    assert not any(data[used:]), "padding not zero"
+    end = at + len(blob)
+    while len(data) < end:
+        data.extend(b"\0" * PAD)
+    data[at:end] = blob
+    assert len(data) <= stock_len, "rootfs with manifest is bigger than stock"
+    # Same image length as stock (and as the installed test builds), zero padded.
+    data.extend(b"\0" * (stock_len - len(data)))
+    open(img, "wb").write(bytes(data))
+    return at
 
 
 def sha256(path):
@@ -315,12 +452,17 @@ def build(variant, items, total_len, replace=False):
         allowed, tag = set(), ""
     elif variant == "tier1":
         allowed, tag = apply_tier1(tree), ""
+    elif variant == "release":
+        allowed, tag, manifest = apply_release(tree, stock_tree)
     else:
         allowed, tag = apply_passthru(tree, diag=variant == "passthru_diag")
 
     img = f"{WORK}/rootfs.{variant}.img"
     used = mksquashfs(tree, img, stock_img)
     stock_len = os.path.getsize(stock_img)
+    if variant == "release":
+        at = write_manifest_padding(img, used, manifest, stock_len)
+        print(f"release manifest in rootfs padding at {at:#x}")
     assert os.path.getsize(img) <= stock_len, "rebuilt rootfs is bigger than stock"
     print(f"rootfs {used} bytes used, {os.path.getsize(img)} padded (stock {stock_len})")
 
@@ -343,8 +485,9 @@ def build(variant, items, total_len, replace=False):
     md5_text = "".join(f"{md5s[n]}  {n}\n" for n in names if n in md5s).encode()
     new_items = [(f, n, rootfs if n == "rootfs" else md5_text if n == "cpio_item_md5" else d)
                  for f, n, d in items]
-    out_dir = DIAG_DIR if variant == "passthru_diag" else WORK
-    out = f"{out_dir}/v5_202610121756_{variant}.swu"
+    out_dir = (DIAG_DIR if variant == "passthru_diag" else f"{RELEASE_DIR}/{RELEASE_VERSION}" if variant == "release"
+               else WORK)
+    out = f"{out_dir}/{RELEASE_ASSET}" if variant == "release" else f"{out_dir}/v5_202610121756_{variant}.swu"
     os.makedirs(out_dir, exist_ok=True)
     # Write beside the output first; an existing different image is never
     # touched unless replacing is explicitly allowed for this variant.
@@ -364,7 +507,7 @@ def build(variant, items, total_len, replace=False):
             assert d == next(x for g, m, x in items if m == n), f"{n} changed"
     unchanged = [n for f, n, d in back if n not in ("rootfs", "cpio_item_md5")]
     if os.path.exists(out) and open(out, "rb").read() != open(tmp, "rb").read():
-        if not (replace and variant == "passthru_diag"):
+        if not (replace and variant in ("passthru_diag", "release")):
             os.remove(tmp)
             raise SystemExit(f"REFUSED: {out} exists with different bytes (sha256 {sha256(out)}); kept it. "
                              + ("Pass --replace to replace this unpublished test image." if variant == "passthru_diag"
@@ -372,14 +515,33 @@ def build(variant, items, total_len, replace=False):
         print(f"replacing previous test image {out} (sha256 {sha256(out)})")
     os.replace(tmp, out)
     print(f"wrote {out}\n  md5 {md5(out)}  size {os.path.getsize(out)}" + (f"\n  {tag}" if tag else ""))
-    return {"file": out, "size": os.path.getsize(out), "md5": md5(out), "sha256": sha256(out),
+    info_extra = {"manifest": manifest} if variant == "release" else {}
+    return {**info_extra, "file": out, "size": os.path.getsize(out), "md5": md5(out), "sha256": sha256(out),
             "build_id": tag.split("=", 1)[1] if tag else None, "changed_rootfs_entries": sorted(changed),
             "byte_identical_payloads": unchanged, "rootfs_bytes_used": used,
             "rootfs_padded": len(rootfs), "stock_rootfs_padded": stock_len}
 
 
-def write_release_metadata(info):
+def write_release_metadata(info, variant="passthru_diag"):
     meta = dict(info)
+    if variant == "release":
+        meta.update({
+            "name": os.path.basename(info["file"]), "variant": "release", "version": RELEASE_VERSION,
+            "kind": "TEST release: main page, settings, presets, recovery, debug ZIP and built-in updater; video unchanged",
+            "staged_name": "cpthru.swu",
+            "device": "Carlinkit Mini Ultra 6 (Allwinner v553), stock config platform=v553 custom=yunlianAm",
+            "base": {"file": os.path.basename(STOCK_SWU), "md5": STOCK_MD5, "sha256": sha256(STOCK_SWU),
+                     "version": "202610121756C"},
+            "known_limitation": "pass-through measured at about 8 fps on the owner's car; unchanged in this release",
+            "built_utc": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+        path = f"{RELEASE_DIR}/{RELEASE_VERSION}/{RELEASE_ASSET[:-4]}.json"
+        with open(path + ".new", "w") as f:
+            json.dump(meta, f, indent=2)
+            f.write("\n")
+        os.replace(path + ".new", path)
+        print(f"wrote {path}")
+        return
     meta.update({
         "name": os.path.basename(info["file"]), "variant": "passthru_diag",
         "kind": "TEST build for measurements and a debug ZIP; not a performance fix",
@@ -414,15 +576,15 @@ def main():
     if variant == "passthru":
         raise SystemExit("passthru is retired: the delivered image (sha256 " + PASSTHRU_SHA256 + ") was built "
                          "from commit bc428da and is kept as is. Build passthru_diag, or check out bc428da.")
-    assert variant in ("tier1", "passthru_diag", "selftest"), \
-        "usage: build_fw.py tier1|passthru_diag [--replace] | --selftest | --patch-index SHTTPD_DIR OUT"
+    assert variant in ("tier1", "passthru_diag", "release", "selftest"), \
+        "usage: build_fw.py tier1|passthru_diag|release [--replace] | --selftest | --patch-index SHTTPD_DIR OUT"
     assert md5(STOCK_SWU) == STOCK_MD5, "stock .swu changed on disk"
     check_delivered()
     os.makedirs(WORK, exist_ok=True)
     items, total_len = read_cpio(STOCK_SWU)
     info = build(variant, items, total_len, replace)
-    if variant == "passthru_diag":
-        write_release_metadata(info)
+    if variant in ("passthru_diag", "release"):
+        write_release_metadata(info, variant)
     check_delivered()
 
 
