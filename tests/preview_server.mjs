@@ -6,7 +6,7 @@ import {readFile} from 'node:fs/promises';
 import {createAdapter, BASE} from './mock_adapter.mjs';
 const port = Number(process.argv.includes('--port') ? process.argv[process.argv.indexOf('--port') + 1] : 8765);
 const REPO = new URL('..', import.meta.url).pathname;
-const rel = BASE + '/release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.json';
+const rel = BASE + '/release/0.2.0-test.2/carlinkit-ultra6-0.2.0-test.2.json';
 const meta = JSON.parse(await readFile(rel, 'utf8'));
 const banner = '<div style="position:sticky;top:0;z-index:50;background:#ffe14d;color:#131210;font:600 14px/1.4 system-ui;' +
   'padding:8px 16px;border-bottom:2px solid #111">PREVIEW: simulated adapter with sample data. Nothing here talks to a real adapter.</div>';

@@ -1,87 +1,32 @@
-# Carlinkit Mini Ultra 6 firmware research
+# Carlinkit Mini Ultra 6 firmware
 
-An experimental CarPlay pass-through modification for the Allwinner v553
-Mini Ultra 6, developed through firmware analysis, AI-assisted engineering,
-independent code review, and physical-device testing.
+Experimental CarPlay pass-through firmware for the Carlinkit Mini Ultra 6
+(Allwinner v553, stock base 202610121756C). It forwards the iPhone's video to
+the car instead of re-encoding it; AirPlay and fallback keep the stock path.
 
-The aim is to forward the iPhone's compressed video to the car while keeping
-the stock transcoder available for AirPlay and fallback.
+**Status:** test builds only. Measured ~8 fps in the owner's car; the cause is
+still under investigation.
 
-## Current result
+![Status](docs/screenshots/tab-status.png) ![Settings](docs/screenshots/tab-settings.png) ![Update](docs/screenshots/tab-update.png)
 
-As of November 3, 2026, a custom pass-through image is installed on one
-adapter. Its status page reports active pass-through and no fallbacks. Live
-input/output stay around 8 fps during movement, so the performance goal is
-**not yet achieved**. This is an investigation, not a stable release or a
-demonstrated 60 fps upgrade.
+## Install
 
-## Latest test release: 0.2.0-test.1
+Download the latest `.swu` from [Releases](https://github.com/RexMan04/carlinkit-ultra6-firmware/releases),
+then follow the [phone steps](phone-upload-v2/README.md).
 
-A usability release. Video forwarding is unchanged.
+## Features
 
-- **One main page** at `http://192.168.50.100`: live input/output frame
-  rates, bitrate, mode and fallbacks; every supported setting; presets with
-  export/import; firmware update; debug ZIP; recovery; device info.
-- **Built-in updater**: choose an SWU in Files, the phone validates and
-  identifies it, upload with progress, the adapter verifies it, then a
-  separate **Install firmware** button. Future project releases install from
-  the page with no new bookmark.
-- **Recovery**: stock video processing, reset project settings, stock
-  factory reset, and stock rollback through the same updater (rollback not
-  yet tested on an adapter).
+- Adapter page with Status, Settings, Update and Tools tabs
+- Live frame rate and bitrate
+- Supported adapter settings, presets, export/import
+- Built-in firmware updater
+- Debug ZIP, stock video mode, factory reset, stock rollback
 
-![Main page, live status and settings (sample data)](docs/screenshots/main-top.png)
-![Firmware update after upload verification (sample data)](docs/screenshots/update-uploaded.png)
+## Limits
 
-Screenshots come from the test mock with sample data, not a live adapter.
-
-### Install
-
-See the [phone steps](phone-upload-v2/README.md). Short version:
-
-- **Adapter already on 0.2+**: download the `.swu`, open
-  `http://192.168.50.100`, Firmware update, choose it, Upload and verify,
-  Install firmware.
-- **First install** (stock, original pass-through or diagnostics.1): Safari
-  needs the release's `bookmarklet.txt` saved as a bookmark once (one manual
-  URL edit). Run it on the adapter page and use the same Upload / Install
-  steps.
-
-### Settings on the page
-
-Each control writes exactly the property the stock CGI writes, with the stock
-values (checked against the extracted stock `setprop.cgi`, `audioselect.cgi`
-and page scripts):
-
-| Setting | Property | Values | Takes effect |
-|---|---|---|---|
-| CarPlay video | `persist.cpthru.off` | pass-through / stock processing | next CarPlay connection |
-| Audio delay | `persist.suding.wl.audio.latency` | phone decides, 300-1000 ms | next CarPlay connection |
-| Audio stream mode | `persist.sys.carplay.audio.media.samplerate` | 44.1 / 48 kHz | after restart |
-| Hotspot channel | `persist.sys.wifi.channel` | 36-48, 149-161 | after restart |
-| Startup delay | `persist.sys.boot.delay` | 0-60 s | next power-on |
-| Car GPS to iPhone | `persist.sys.headunit.gps.disable` | on / off | next CarPlay connection |
-| Force display | `persist.suding.wireless.carplay.force.display` | off / on | next CarPlay connection |
-
-"Takes effect" for the stock settings is expected behavior, not yet
-confirmed on the adapter. There are no frame-rate, resolution or bitrate
-controls: nothing in this firmware makes them work, and a 60 fps setting
-would not prove 60 fps output.
-
-### Known limits
-
-- Still about 8 fps in the owner's car; cause unresolved. Use **Debug ZIP**.
-- The checks prove a file is intact and built on the stock base, not who made
-  it. There is no signature.
-- Installing rewrites recovery, kernel and system. No recovery mode is known
-  if that fails. Stock rollback is untested on a real adapter.
-- The stock language menu, vendor online update, vendor feedback form and
-  activation screen are not on the new page; rollback restores them.
-
-## Diagnostic test build (0.1.0-diagnostics.1)
-
-The previous release added frame-hook timing and the debug ZIP; both are part
-of 0.2. Its phone steps are in [phone-upload-diag](phone-upload-diag/README.md).
+- No signature: checks confirm the file is intact and built on the right base.
+- No known recovery mode if an install fails. Stock rollback is untested.
+- Only this model and base firmware.
 
 ## Source map
 

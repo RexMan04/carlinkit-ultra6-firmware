@@ -76,8 +76,8 @@ DIAG_WEB_FILES = dict(WEB_FILES, **{
     f"{WEB}/cgi-bin/cpthru_snapshot.cgi": ("cgi-bin/cpthru_snapshot.cgi", 0o744),
     f"{WEB}/cgi-bin/cpthru_json.awk": ("cgi-bin/cpthru_json.awk", 0o644),  # status CGI's JSON check
 })
-RELEASE_VERSION = "0.2.0-test.1"
-RELEASE_LABEL = "Main page + updater test " + RELEASE_VERSION
+RELEASE_VERSION = "0.2.0-test.2"
+RELEASE_LABEL = "Test build: main page and updater"
 RELEASE_DIR = f"{FW}/release"
 RELEASE_ASSET = f"carlinkit-ultra6-{RELEASE_VERSION}.swu"
 MANIFEST_PATH = f"{WEB}/cpthru-release.json"

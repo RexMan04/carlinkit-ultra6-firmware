@@ -1,5 +1,5 @@
 {
-  "date": "2026-11-03T23:49:45.491Z",
+  "date": "2026-11-04T00:22:33.144Z",
   "engines": {
     "webkit": "27.2",
     "chromium": "157.0.8103.15"
@@ -7,9 +7,9 @@
   "images": [
     {
       "name": "cpthru.swu",
-      "label": "Release 0.2.0-test.1",
-      "md5": "30749ccd0b7790fb28a35ad93e13c5a3",
-      "sha256": "231ce84e70f3a1e047d238ff5cda48e692425249d7e925493ab2b2a4d6ce1fba",
+      "label": "Release 0.2.0-test.2",
+      "md5": "2209ba01398c67eb4d5303b063664546",
+      "sha256": "c6ca2b5c291fe95b094faef79571f836c70d7dbbb8de5fb382e0b745760bf2ad",
       "size": 27578368
     },
     {
@@ -22,27 +22,27 @@
   ],
   "results": [
     {
-      "name": "WebKit actual Release 0.2.0-test.1",
-      "requests": 2694,
-      "result": "pass"
-    },
-    {
       "name": "WebKit actual Stock rollback",
       "requests": 2694,
       "result": "pass"
     },
     {
-      "name": "WebKit actual Release 0.2.0-test.1 from the diagnostics main page",
+      "name": "WebKit actual Release 0.2.0-test.2",
       "requests": 2694,
       "result": "pass"
     },
     {
-      "name": "WebKit active",
-      "requests": 0,
+      "name": "WebKit actual Release 0.2.0-test.2 from the diagnostics main page",
+      "requests": 2694,
       "result": "pass"
     },
     {
       "name": "WebKit origin",
+      "requests": 0,
+      "result": "pass"
+    },
+    {
+      "name": "WebKit active",
       "requests": 0,
       "result": "pass"
     },
@@ -57,13 +57,13 @@
       "result": "pass"
     },
     {
-      "name": "WebKit http",
-      "requests": 1,
+      "name": "WebKit lost",
+      "requests": 2,
       "result": "pass"
     },
     {
-      "name": "WebKit lost",
-      "requests": 2,
+      "name": "WebKit redirect",
+      "requests": 1,
       "result": "pass"
     },
     {
@@ -72,7 +72,7 @@
       "result": "pass"
     },
     {
-      "name": "WebKit redirect",
+      "name": "WebKit http",
       "requests": 1,
       "result": "pass"
     },
@@ -87,17 +87,17 @@
       "result": "pass"
     },
     {
-      "name": "WebKit final",
-      "requests": 2694,
-      "result": "pass"
-    },
-    {
       "name": "WebKit hash-echo",
       "requests": 2694,
       "result": "pass"
     },
     {
-      "name": "Chromium actual Release 0.2.0-test.1",
+      "name": "WebKit final",
+      "requests": 2694,
+      "result": "pass"
+    },
+    {
+      "name": "Chromium actual Release 0.2.0-test.2",
       "requests": 2694,
       "result": "pass"
     }

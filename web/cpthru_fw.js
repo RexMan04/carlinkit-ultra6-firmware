@@ -255,7 +255,7 @@
 
 	/* ---- upload: the stock protocol, exactly (10 KiB, sequential, no retry) ---- */
 	async function upload(b, info, progress) {
-		var total = Math.ceil(b.length / 10240), started = Date.now(), state = {sent: false};
+		var total = Math.ceil(b.length / 10240), state = {sent: false};
 		if (NAMES.indexOf(info.name) < 0) throw Error("Refused: unexpected staged name.");
 		try {
 			for (var chunk = 0; chunk < total; chunk++) {
@@ -264,8 +264,7 @@
 				var form = new FormData();
 				form.append("chunk", new Blob([b.subarray(chunk * 10240, (chunk + 1) * 10240)],
 					{type: "application/octet-stream"}), info.name + suffix);
-				progress(chunk / total, "Uploading " + (chunk + 1) + "/" + total + ", " +
-					Math.round((Date.now() - started) / 1000) + " s");
+				progress(chunk / total, "Uploading " + (chunk + 1) + "/" + total + " \u00b7 " + Math.round(chunk / total * 100) + "%");
 				var ctl = new AbortController(), timer = setTimeout(function () { ctl.abort(); }, 30000), text;
 				try {
 					state.sent = true;
@@ -346,10 +345,9 @@
 		return out;
 	}
 	function describe(now, want) {
-		var what = now.releaseState === "valid" ? "project release " + now.release.version + " (release ID " + now.release.release_id + ")" :
-			now.releaseState === "absent" && now.shimState === "valid" ? "an older project build without a release file (shim " + now.shim + ")" :
-			now.releaseState === "absent" && now.shimState === "absent" ? "stock firmware (no project files found)" :
-			"firmware that could not be identified yet (some requests failed)";
+		var what = now.releaseState === "valid" ? now.release.version + " (" + now.release.release_id + ")" :
+			now.releaseState === "absent" && now.shimState === "valid" ? "older build (shim " + now.shim + ")" :
+			now.releaseState === "absent" && now.shimState === "absent" ? "stock firmware" : "unidentified firmware";
 		var match = null;
 		if (want && want.kind === "project") {
 			if (now.releaseState === "valid") match = now.release.release_id === want.release_id;
@@ -362,7 +360,7 @@
 			else if (now.releaseState === "absent" && now.shimState === "valid") match = now.shim === want.shim;
 			else if (now.releaseState === "absent" && now.shimState === "absent") match = false;
 		}
-		return {text: "The adapter reports " + what + ", system version " + now.system + ".", match: match};
+		return {text: what, match: match};
 	}
 	function sameIdentity(a, b) {
 		return !!(a && b && a.releaseState === b.releaseState && a.shimState === b.shimState &&
@@ -370,41 +368,56 @@
 	}
 
 	/* ---- UI ---- */
-	var CSS = ".fw{display:grid;gap:12px;min-width:0}.fw>*{min-width:0}.fw .fw-pick{display:grid;gap:6px;font-weight:600}.fw table{width:100%;border-collapse:collapse;font-size:14px}" +
-		".fw th{text-align:left;font-weight:500;color:var(--muted,#555);padding:4px 8px 4px 0;vertical-align:top;width:38%}" +
-		".fw td{padding:4px 0;overflow-wrap:anywhere}.fw progress{width:100%;height:14px}" +
-		".fw .fw-btn{display:block;width:100%;padding:14px;font:inherit;font-size:17px;font-weight:700;border-radius:8px;" +
-		"border:2px solid var(--line,#111);background:var(--bg,#fff);color:var(--fg,#111);box-shadow:3px 3px 0 var(--shadow,#111);" +
-		"height:auto;line-height:1.3;white-space:normal;cursor:pointer;text-align:center}" +
-		".fw .fw-btn.go{background:var(--accent,#111);color:var(--on-accent,#fff)}" +
-		".fw .fw-btn.danger{background:var(--warn-soft,#ffe6d5);border-color:var(--warn,#9a3412);color:var(--warn,#9a3412)}" +
-		".fw .fw-btn:disabled{opacity:.45;cursor:default;box-shadow:none}.fw .fw-btn[hidden],.fw [hidden]{display:none}" +
-		".fw input[type=file]{width:100%;max-width:100%;min-width:0;font-size:15px}.fw .fw-msg{margin:0;font-weight:600}" +
-		".fw .fw-msg.bad{color:var(--bad,#b91c1c)}.fw .fw-msg.ok{color:var(--ok,#166534)}.fw .fw-note{margin:0;font-size:13px;color:var(--muted,#555)}";
+	var CSS = ".fw{display:grid;gap:12px;min-width:0}.fw>*{min-width:0}" +
+		".fw .fw-row{display:flex;align-items:center;gap:12px;min-width:0}" +
+		".fw .fw-pick{position:relative;overflow:hidden;flex:none}" +
+		".fw .fw-pick input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}" +
+		".fw .fw-fname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted,#666)}" +
+		".fw .fw-id b{display:block;font-size:17px}.fw .fw-id span{color:var(--muted,#666);font-size:14px}" +
+		".fw details{font-size:13px}.fw summary{cursor:pointer;color:var(--muted,#666)}" +
+		".fw table{width:100%;border-collapse:collapse;margin-top:6px}" +
+		".fw th{text-align:left;font-weight:500;color:var(--muted,#666);padding:3px 8px 3px 0;vertical-align:top;width:30%}" +
+		".fw td{padding:3px 0;overflow-wrap:anywhere;font-family:ui-monospace,Menlo,monospace;font-size:12px}" +
+		".fw progress{width:100%;height:6px;appearance:none;-webkit-appearance:none;border:0;border-radius:3px;background:var(--hair,#e5e5e5)}" +
+		".fw progress::-webkit-progress-bar{background:var(--hair,#e5e5e5);border-radius:3px}" +
+		".fw progress::-webkit-progress-value{background:var(--accent,#0a84ff);border-radius:3px}" +
+		".fw .fw-btn{display:block;width:100%;padding:13px;font:inherit;font-size:16px;font-weight:600;border-radius:12px;border:0;" +
+		"background:var(--fill,#eee);color:var(--fg,#111);cursor:pointer;text-align:center;line-height:1.2}" +
+		".fw .fw-btn.go{background:var(--accent,#0a84ff);color:var(--on-accent,#fff)}" +
+		".fw .fw-btn.danger{background:var(--bad,#d70015);color:#fff}" +
+		".fw .fw-btn.small{display:inline-block;width:auto;padding:8px 14px;font-size:15px}" +
+		".fw .fw-btn:disabled{opacity:.4;cursor:default}.fw [hidden]{display:none!important}" +
+		".fw .fw-msg{margin:0;font-size:15px}.fw .fw-msg:empty{display:none}" +
+		".fw .fw-msg.bad{color:var(--bad,#d70015)}.fw .fw-msg.ok{color:var(--ok,#248a3d)}" +
+		".fw .fw-confirm{display:grid;gap:10px;padding:12px;border-radius:12px;background:var(--fill,#eee)}" +
+		".fw .fw-confirm p{margin:0;font-weight:600}.fw .fw-confirm div{display:grid;grid-template-columns:1fr 1fr;gap:10px}";
 
-	var busy = false, installed = false, ctxRef = null;
+	var busy = false, installed = false;
 	function mount(el, ctx) {
-		ctx = ctxRef = ctx || {};
+		ctx = ctx || {};
 		if (!document.getElementById("fw-css")) {
 			var st = document.createElement("style"); st.id = "fw-css"; st.textContent = CSS; document.head.appendChild(st);
 		}
 		el.classList.add("fw");
 		el.innerHTML =
-			'<label class="fw-pick">Firmware file (.swu) <input type="file" class="fw-file"></label>' +
-			'<table hidden class="fw-info"><tbody></tbody></table>' +
+			'<div class="fw-row"><label class="fw-btn small fw-pick">Choose file<input type="file" class="fw-file" aria-label="Firmware file"></label>' +
+			'<span class="fw-fname">No file selected</span></div>' +
+			'<div class="fw-id" hidden><b></b><span></span></div>' +
+			'<details class="fw-more" hidden><summary>Details</summary><table class="fw-info"><tbody></tbody></table></details>' +
 			'<progress class="fw-bar" max="1" value="0" hidden></progress>' +
-			'<p class="fw-msg" role="status">Choose an SWU saved in Files. Nothing is sent until you tap Upload.</p>' +
-			'<button type="button" class="fw-btn go fw-up" disabled>Upload and verify</button>' +
-			'<button type="button" class="fw-btn fw-reuse" hidden>Use the copy already on the adapter</button>' +
-			'<button type="button" class="fw-btn danger fw-inst" hidden>Install firmware</button>' +
-			'<p class="fw-note fw-help">Keep Safari open on this page during upload and install. Upload only copies and checks the file; ' +
-			'nothing changes until you tap Install firmware. Turn off Low Power Mode and set Auto-Lock to Never while updating.</p>';
+			'<p class="fw-msg" role="status"></p>' +
+			'<button type="button" class="fw-btn go fw-up" disabled>Upload</button>' +
+			'<button type="button" class="fw-btn fw-reuse" hidden>Use copy on adapter</button>' +
+			'<button type="button" class="fw-btn go fw-inst" hidden>Install</button>' +
+			'<div class="fw-confirm" hidden><p></p><div><button type="button" class="fw-btn fw-no">Cancel</button>' +
+			'<button type="button" class="fw-btn danger fw-yes">Install</button></div></div>';
 		var q = function (c) { return el.querySelector("." + c); };
-		var input = q("fw-file"), info = q("fw-info"), bar = q("fw-bar"), msg = q("fw-msg"),
-			up = q("fw-up"), reuse = q("fw-reuse"), inst = q("fw-inst");
-		var bytes = null, rep = null, verified = false, attempted = false, staged = [], armed = false, gw = null;
+		var input = q("fw-file"), fname = q("fw-fname"), idb = q("fw-id"), more = q("fw-more"), info = q("fw-info"),
+			bar = q("fw-bar"), msg = q("fw-msg"), up = q("fw-up"), reuse = q("fw-reuse"), inst = q("fw-inst"),
+			confirmBox = q("fw-confirm"), yes = q("fw-yes"), no = q("fw-no");
+		var bytes = null, rep = null, verified = false, attempted = false, staged = [], gw = null;
 
-		function say(t, tone) { msg.textContent = t; msg.className = "fw-msg" + (tone ? " " + tone : ""); }
+		function say(t, tone) { msg.textContent = t || ""; msg.className = "fw-msg" + (tone ? " " + tone : ""); }
 		function setBusy(b) { busy = b; if (ctx.onBusy) ctx.onBusy(b); }
 		function rows(list) {
 			var tb = info.tBodies[0]; tb.textContent = "";
@@ -412,41 +425,43 @@
 				var tr = document.createElement("tr"), th = document.createElement("th"), td = document.createElement("td");
 				th.textContent = r[0]; td.textContent = r[1]; tr.appendChild(th); tr.appendChild(td); tb.appendChild(tr);
 			});
-			info.hidden = !list.length;
+			more.hidden = !list.length;
 		}
-		function prog(f, t) { bar.hidden = false; bar.value = f; if (t) say(t); }
-		function lock(all) {
-			input.disabled = all; up.disabled = true; reuse.hidden = true; inst.hidden = true;
-		}
+		function prog(f, t) { bar.hidden = false; bar.value = f; if (t) say(t + " " + Math.round(f * 100) + "%"); }
+		function lock(all) { input.disabled = all; up.disabled = true; reuse.hidden = true; inst.hidden = true; confirmBox.hidden = true; }
 		function other() { return ctx.busyOthers ? ctx.busyOthers() : null; }
 
 		input.onchange = async function () {
 			if (busy || installed) return;
 			var why = other();
-			if (why) { say("Not checked: " + why, "bad"); input.value = ""; return; }
-			bytes = rep = null; verified = false; attempted = false; rows([]); lock(false);
+			if (why) { say(why, "bad"); input.value = ""; return; }
+			bytes = rep = null; verified = false; attempted = false; rows([]); lock(false); idb.hidden = true;
+			up.textContent = "Upload"; up.hidden = false;
 			var file = input.files && input.files[0];
-			if (!file) { say("Choose an SWU saved in Files."); return; }
+			fname.textContent = file ? file.name : "No file selected";
+			if (!file) { say(""); return; }
 			setBusy(true); input.disabled = true;
 			try {
-				say("Reading " + file.name + "...");
+				say("Checking...");
 				bytes = new Uint8Array(await file.arrayBuffer());
-				rep = await analyze(bytes, prog);
+				rep = await analyze(bytes, function (f) { prog(f, "Checking"); });
 			} catch (e) {
 				rep = {ok: false, error: "Could not read the file: " + (e.message || e)};
 			} finally { setBusy(false); input.disabled = false; bar.hidden = true; }
-			var list = [["File", file.name], ["Size", (rep.size / 1048576).toFixed(2) + " MiB (" + rep.size + " bytes)"]];
+			var list = [["Size", rep.size + " bytes"]];
 			if (rep.ok) {
-				list.push(["Identified as", rep.label]);
-				if (rep.version) list.push(["Version", rep.version], ["Release ID", rep.release_id]);
-				if (rep.shim) list.push(["Shim build", rep.shim]);
-				list.push(["Model/base check", "Passed: Mini Ultra 6, stock 202610121756C base"], ["Staged as", rep.name]);
+				if (rep.release_id) list.push(["Release ID", rep.release_id]);
+				if (rep.shim) list.push(["Shim", rep.shim]);
+				list.push(["Base", "202610121756C (checked)"], ["Staged as", rep.name]);
 			}
 			if (rep.sha256) list.push(["SHA-256", rep.sha256], ["MD5", rep.md5]);
 			rows(list);
 			if (!rep.ok) { say("Not accepted: " + rep.error, "bad"); bytes = null; return; }
-			say(rep.kind === "stock" ? "Valid stock firmware. Installing it removes this page and all project features; " +
-				"stock rollback has not been tested on an adapter yet." : "Valid image. Tap Upload and verify.", rep.kind === "stock" ? "bad" : "ok");
+			idb.hidden = false;
+			idb.querySelector("b").textContent = rep.kind === "stock" ? "Stock firmware" : rep.version ? rep.version : rep.label;
+			idb.querySelector("span").textContent = rep.kind === "stock" ? "Rollback · removes project features · untested" :
+				rep.kind === "legacy" ? rep.label : rep.label;
+			say(rep.kind === "stock" ? "" : "Ready to upload", rep.kind === "stock" ? "" : "ok");
 			up.disabled = false;
 			var copy = staged.filter(function (s) { return s.name === rep.name && s.size === rep.size; })[0];
 			reuse.hidden = !(gw && copy);
@@ -455,16 +470,15 @@
 		up.onclick = async function () {
 			if (!rep || !rep.ok || busy || attempted || installed) return;
 			var why = other();
-			if (why) { say("Not started: " + why, "bad"); return; }
+			if (why) { say(why, "bad"); return; }
 			attempted = true; setBusy(true); lock(true);
 			try {
-				await upload(bytes, rep, prog);
+				await upload(bytes, rep, function (f, t) { bar.hidden = false; bar.value = f; say(t); });
 				verified = true;
-				say("Uploaded and verified: the adapter's copy matches (MD5 " + rep.md5 + "). NOT installed yet.", "ok");
-				inst.hidden = false; inst.disabled = false;
+				say("Uploaded and verified · not installed", "ok");
+				up.hidden = true; inst.hidden = false; inst.disabled = false;
 			} catch (e) {
-				say((e.sent ? "Upload stopped. The adapter's staged copy is incomplete; do not install it. " : "Nothing uploaded. ") +
-					e.message + " Tap Upload again to restart from the beginning.", "bad");
+				say("Upload failed: " + e.message, "bad");
 				attempted = false; up.disabled = false; up.textContent = "Upload again";
 			} finally { setBusy(false); input.disabled = false; bar.hidden = true; refreshStaged(); }
 		};
@@ -472,66 +486,52 @@
 		reuse.onclick = async function () {
 			if (!rep || !rep.ok || busy || installed || !gw) return;
 			var why = other();
-			if (why) { say("Not checked: " + why, "bad"); return; }
-			setBusy(true); lock(true); say("Asking the adapter to checksum its staged copy...");
+			if (why) { say(why, "bad"); return; }
+			setBusy(true); lock(true); say("Checking adapter copy...");
 			try {
 				var r = await get(GATEWAY + "?op=verify&name=" + encodeURIComponent(rep.name) + "&size=" + rep.size, 90000);
 				if (r.json && r.json.ok && r.json.md5 === rep.md5 && r.json.size === rep.size) {
-					verified = true;
-					say("The adapter's staged copy matches this file (MD5 " + rep.md5 + "). NOT installed yet.", "ok");
-					inst.hidden = false; inst.disabled = false;
-				} else {
-					say("The adapter's staged copy does not match" + (r.json && r.json.error ? " (" + r.json.error + ")" : "") +
-						". Upload the file instead.", "bad");
-					up.disabled = false;
-				}
-			} catch (e) { say("Could not check the staged copy: " + e.message + ". Upload the file instead.", "bad"); up.disabled = false; }
+					verified = true; say("Adapter copy verified · not installed", "ok");
+					up.hidden = true; inst.hidden = false; inst.disabled = false;
+				} else { say("Adapter copy doesn't match. Upload instead.", "bad"); up.disabled = false; up.hidden = false; }
+			} catch (e) { say("Couldn't check the adapter copy. Upload instead.", "bad"); up.disabled = false; up.hidden = false; }
 			finally { setBusy(false); input.disabled = false; }
 		};
 
-		inst.onclick = async function () {
+		inst.onclick = function () {
 			if (!verified || installed || busy) return;
 			var why = other();
-			if (why) { say("Not started: " + why, "bad"); return; }
-			if (!armed) {
-				armed = true; inst.textContent = "Tap again to install " + rep.label;
-				setTimeout(function () { if (armed && !installed) { armed = false; inst.textContent = "Install firmware"; } }, 5000);
-				return;
-			}
-			armed = false; inst.textContent = "Install firmware";
+			if (why) { say(why, "bad"); return; }
+			confirmBox.querySelector("p").textContent = "Install " + (rep.kind === "stock" ? "stock firmware" : rep.version || rep.label) +
+				"? The adapter will restart.";
+			confirmBox.hidden = false; inst.hidden = true;
+		};
+		no.onclick = function () { confirmBox.hidden = true; inst.hidden = false; };
+		yes.onclick = async function () {
+			if (!verified || installed || busy) return;
+			confirmBox.hidden = true;
 			installed = true; setBusy(true); lock(true); input.disabled = true;
-			function back(msgText) {
-				installed = false; setBusy(false); verified = true; inst.hidden = false; inst.disabled = false;
-				input.disabled = false; say(msgText, "bad");
-			}
-			say("Checking the adapter before installing...");
+			function back(t) { installed = false; setBusy(false); verified = true; inst.hidden = false; inst.disabled = false; input.disabled = false; say(t, "bad"); }
+			say("Preparing...");
 			var g = await gateway();
-			if (g.kind === "unavailable" || (ctx.builtin && g.kind !== "ok"))
-				return back("Not installed: the adapter's updater did not answer. Nothing was changed. Check the Wi-Fi and tap Install firmware again.");
+			if (g.kind === "unavailable" || (ctx.builtin && g.kind !== "ok")) return back("Not installed: the adapter didn't answer. Try again.");
 			var before = null;
 			try { before = await running(); } catch (e) { before = null; }
-			var want = {kind: rep.kind, label: rep.label, release_id: rep.release_id || null, shim: rep.shim || null,
+			var want = {kind: rep.kind, label: rep.version || rep.label, release_id: rep.release_id || null, shim: rep.shim || null,
 				name: rep.name, md5: rep.md5, t: Date.now(), before: before};
-			say("Sending the install request...");
 			if (g.kind === "ok") {
 				var r = null;
 				try { r = await get(GATEWAY + "?op=install&name=" + encodeURIComponent(rep.name) + "&size=" + rep.size + "&md5=" + rep.md5, 120000); }
 				catch (e) { r = null; }
 				if (r && r.json && r.json.ok === false && r.json.phase === "rejected") {
-					verified = false; up.disabled = false; up.textContent = "Upload again";
-					back("Install refused before anything started: " + r.json.error + ". Nothing was changed.");
+					verified = false; up.disabled = false; up.hidden = false; up.textContent = "Upload again";
+					back("Install refused: " + r.json.error + ". Nothing changed.");
 					inst.hidden = true;
 					return;
 				}
-				if (r && r.json && r.json.ok === false && r.json.phase === "install-started") {
-					store(PENDING, want);
-					say("An install was already started on the adapter this boot. Do not tap anything; this page keeps watching.", "bad");
-					return watch(want);
-				}
 				if (!(r && r.json && r.json.ok)) {
 					store(PENDING, want);
-					say("The adapter's answer to the install request was lost, so it may or may not be installing. " +
-						"Do not tap anything; this page keeps watching.", "bad");
+					say(r && r.json && r.json.phase === "install-started" ? "Install already in progress" : "No answer to the install request", "bad");
 					return watch(want);
 				}
 			} else {
@@ -543,7 +543,7 @@
 						.then(function (x) { return x.text(); }).then(function (t) { return /refused/.test(t) ? t : null; }, function () { return null; }),
 					new Promise(function (r) { setTimeout(function () { r(null); }, 3000); })
 				]);
-				if (refused) return back("Install refused by the adapter: " + refused.replace(/^[\s\S]*refused:?\s*/, "").trim());
+				if (refused) return back("Install refused by the adapter.");
 			}
 			store(PENDING, want);
 			watch(want);
@@ -563,37 +563,30 @@
 			if (watching) return;
 			watching = true; installed = true; setBusy(true); lock(true); input.disabled = true;
 			var t0 = want.t || Date.now(), down = false, okRun = 0, before = want.before || null;
-			say("Installing " + want.label + ". Keep the adapter powered and this page open. It restarts on its own, " +
-				"possibly more than once.", "bad");
+			say("Installing... keep power on", "bad");
 			for (;;) {
 				var secs = Math.round((Date.now() - t0) / 1000), now = null;
-				var late = secs > 600 ? " It has been over 10 minutes: keep power on and wait; do not unplug." : "";
+				var late = secs > 600 ? " · over 10 min, keep waiting" : "";
 				try { now = await running(); } catch (e) { now = null; }
 				if (!now) {
 					down = true; okRun = 0;
-					say("Adapter restarting or busy (" + secs + " s since the install request). Keep power on. " +
-						"If Safari loses the Wi-Fi, rejoin the adapter's hotspot; this page reconnects by itself." + late, "bad");
+					say("Restarting... " + secs + " s" + late, "bad");
 				} else {
 					var d = describe(now, want);
 					var restarted = down || (before && !sameIdentity(before, now) && d.match === true) ||
 						(before && before.uptime !== null && now.uptime !== null && now.uptime < before.uptime);
 					if (d.match === true && restarted) {
 						if (++okRun >= 2) {
-							say("Done: the adapter is back and runs what you installed. " + d.text +
-								(now.releaseState === "valid" ? "" : " Reload the page to see its own settings page."), "ok");
+							say("Installed " + d.text + (now.releaseState === "valid" ? "" : " · reload the page"), "ok");
 							store(PENDING, null);
 							if (okRun >= 20) break;
 						}
 					} else if (d.match === false && restarted) {
-						okRun = 0;
-						say("The adapter is back, but it does not report what you installed. " + d.text +
-							" It may still be finishing; this page keeps watching." + late, "bad");
+						okRun = 0; say("Back online, running " + d.text + late, "bad");
+					} else if (restarted) {
+						okRun = 0; say("Back online · identifying..." + late, "bad");
 					} else {
-						okRun = 0;
-						var s = gw ? await gatewayState() : null;
-						var log = s && s.log && s.log.length ? " Installer: " + s.log[s.log.length - 1] : "";
-						say((restarted ? "The adapter answered, but " + d.text.charAt(0).toLowerCase() + d.text.slice(1) + " Still checking." :
-							"Install requested " + secs + " s ago; the adapter has not restarted yet." + log) + late, "bad");
+						okRun = 0; say("Installing... " + secs + " s · keep power on" + late, "bad");
 					}
 				}
 				await new Promise(function (r) { setTimeout(r, 3000); });
@@ -606,18 +599,12 @@
 			gw = g.kind === "ok" ? g.state : null;
 			if (gw) staged = gw.staged || [];
 			var want = load(PENDING);
-			if (gw && gw.phase === "install-started") {
-				return watch(want || {kind: "unknown", label: "the staged firmware", t: Date.now()});
-			}
+			if (gw && gw.phase === "install-started") return watch(want || {kind: "unknown", label: "firmware", t: Date.now()});
 			if (want && Date.now() - want.t < 3600000) {
 				try {
 					var d = describe(await running(), want);
-					if (d.match === null) {
-						say("Last install request (" + want.label + "): " + d.text + " Reload in a moment to check again.", "bad");
-						return;
-					}
-					say("Last install request (" + want.label + "): " + (d.match ? "the adapter now runs it. " :
-						"the adapter does NOT report it. ") + d.text, d.match ? "ok" : "bad");
+					if (d.match === null) { say("Last install: identifying... reload in a moment", "bad"); return; }
+					say(d.match ? "Installed " + d.text : "Last install not running · now " + d.text, d.match ? "ok" : "bad");
 					store(PENDING, null);
 				} catch (e) { /* offline: keep the record */ }
 			}

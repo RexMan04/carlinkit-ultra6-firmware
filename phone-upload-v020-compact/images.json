@@ -1,11 +1,11 @@
 [
   {
-    "path": "release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.swu",
+    "path": "release/0.2.0-test.2/carlinkit-ultra6-0.2.0-test.2.swu",
     "name": "cpthru.swu",
-    "label": "Release 0.2.0-test.1",
-    "md5": "30749ccd0b7790fb28a35ad93e13c5a3",
+    "label": "Release 0.2.0-test.2",
+    "md5": "2209ba01398c67eb4d5303b063664546",
     "size": 27578368,
-    "sha256": "231ce84e70f3a1e047d238ff5cda48e692425249d7e925493ab2b2a4d6ce1fba"
+    "sha256": "c6ca2b5c291fe95b094faef79571f836c70d7dbbb8de5fb382e0b745760bf2ad"
   },
   {
     "path": "v5_202610121756.swu",

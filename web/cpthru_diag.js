@@ -449,7 +449,12 @@
 
 	function mount(el) {
 		var poll = el.getAttribute("data-poll") !== "0";
-		el.innerHTML =
+		if (el.getAttribute("data-compact") === "1") el.innerHTML =
+			'<button type="button" class="cpd-prepare">Prepare debug ZIP</button>' +
+			'<div class="cpd-warn" role="alert"></div><p class="cpd-state" role="status"></p>' +
+			'<a class="cpd-download" style="display:none">Download debug ZIP</a>' +
+			'<details class="cpd-timing"><summary>Frame timing</summary><table class="cpd-rows"><tbody></tbody></table></details>';
+		else el.innerHTML =
 			'<p class="cpd-intro" style="margin:0 0 .6em">For the 8 fps test: keep the car parked, show a moving map or ' +
 			'scroll a list on the car screen for about 30 seconds, then tap <b>Prepare debug ZIP</b>. The adapter keeps the ' +
 			'last ~2 minutes of timing, so it is fine if the motion stops while you switch to Safari.</p>' +
@@ -469,6 +474,7 @@
 		var tbody = $("cpd-rows").tBodies[0], warn = $("cpd-warn"), btn = $("cpd-prepare"),
 			state = $("cpd-state"), link = $("cpd-download");
 		var say = function (t) { state.textContent = t; };
+		if (el.getAttribute("data-compact") === "1") say("");
 		notice = function () { say("Please wait: the debug ZIP is being prepared. Settings and updates are paused until it is ready."); };
 
 		function rows(d) {

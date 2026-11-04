@@ -9,7 +9,7 @@ const require = createRequire(import.meta.url);
 const FW = require('../web/cpthru_fw.js');
 const base = '/home/kaden/models/staging/carlinkit-ultra6-fw';
 const arg = (n, d) => process.argv.includes(n) ? process.argv[process.argv.indexOf(n) + 1] : d;
-const releasePath = arg('--release', base + '/release/0.2.0-test.1/carlinkit-ultra6-0.2.0-test.1.swu');
+const releasePath = arg('--release', base + '/release/0.2.0-test.2/carlinkit-ultra6-0.2.0-test.2.swu');
 let n = 0;
 const ok = (c, what) => { assert(c, what); n++; };
 const h = (alg, b) => createHash(alg).update(b).digest('hex');
@@ -112,7 +112,7 @@ ok(r.ok && r.name === 'cpthru.swu', 'a manifest cannot choose the staged name');
 ok(FW.NAMES.every(x => x.length <= 40 && /^[A-Za-z0-9._-]+\.swu$/.test(x)), 'closed staged-name set, all <= 40 bytes');
 // 6. describe()
 const R = (rs, rel, ss, shim) => ({system: 'S', releaseState: rs, release: rel, shimState: ss, shim});
-const relObj = {version: '0.2.0-test.1', release_id: meta.manifest.release_id};
+const relObj = {version: '0.2.0-test.2', release_id: meta.manifest.release_id};
 const P = {kind: 'project', release_id: meta.manifest.release_id}, ST = {kind: 'stock'}, LG = {kind: 'legacy', shim: '1b93a4b1163f'};
 ok(FW.describe(R('valid', relObj, 'valid', '1b93a4b1163f'), P).match === true, 'project match');
 ok(FW.describe(R('valid', {release_id: 'aaaaaaaaaaaa'}, 'valid', 'x'), P).match === false, 'other release');
